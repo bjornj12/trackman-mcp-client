@@ -90,11 +90,21 @@ under the signed-in user's `me` root.
 
 **Auth reality**: the web portal uses a *confidential* OIDC client (backend-for-
 frontend), so the MCP cannot run the OAuth exchange itself. It authenticates with
-a **Bearer access token captured from an authenticated portal session**
-(`TRACKMAN_TOKEN`), attached as `Authorization: Bearer …`. Tokens last ~7 days
-(observed: `iat`→`exp` = 604800s); on `401` the tool returns a clear
-"re-capture token" error. Full detail and example
-GraphQL queries live in `docs/trackman-api.md`.
+a **Bearer access token captured from an authenticated portal session**, attached
+as `Authorization: Bearer …`. Tokens last ~7 days (observed `iat`→`exp` =
+604800s); on `401` the tool returns a clear "re-capture token" error.
+
+**Getting the token** — two paths (`Config.from_env`: `TRACKMAN_TOKEN` env wins,
+else the cached token):
+- **Browser login (recommended)**: `trackman-mcp login` opens an isolated
+  Playwright browser; the user signs in once; the token is captured from the
+  GraphQL traffic and cached at `~/.trackman-mcp/token.json` (mode `0600`). The
+  browser profile persists the session, so `trackman-mcp login --headless`
+  refreshes silently with no re-login (cron-friendly). Code: `login.py`,
+  `token_store.py`. Playwright is the optional `[login]` extra.
+- **Manual**: set `TRACKMAN_TOKEN` from a captured portal session (`.env.example`).
+
+Full detail and example GraphQL queries live in `docs/trackman-api.md`.
 
 ---
 

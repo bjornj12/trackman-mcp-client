@@ -18,6 +18,19 @@ USERINFO_ENDPOINT = f"{OIDC_ISSUER}/connect/userinfo"
 WEB_PORTAL_CLIENT_ID = "golf-portal.2dad6810-ef7c-4a0d-9c0a-0eaae2fb9e98"
 
 
+def _cached_token() -> str | None:
+    """Return a non-expired cached token, if one exists. Never raises."""
+    try:
+        from . import token_store
+
+        cached = token_store.load_token()
+    except Exception:  # cache is best-effort; never break config loading
+        return None
+    if cached and not cached.is_expired():
+        return cached.access_token
+    return None
+
+
 @dataclass(frozen=True)
 class Config:
     """Runtime configuration for the Trackman MCP."""
@@ -34,6 +47,9 @@ class Config:
             # Tolerate users pasting the whole "Bearer xxx" header value.
             if token.lower().startswith("bearer "):
                 token = token[7:].strip()
+        else:
+            # Fall back to a token cached by `trackman-mcp login`.
+            token = _cached_token()
         endpoint = os.environ.get("TRACKMAN_GRAPHQL_ENDPOINT", GRAPHQL_ENDPOINT)
         timeout = float(os.environ.get("TRACKMAN_TIMEOUT_SECONDS", "30"))
         return cls(token=token, graphql_endpoint=endpoint, timeout_seconds=timeout)

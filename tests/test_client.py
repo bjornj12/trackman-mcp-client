@@ -24,11 +24,33 @@ def test_config_strips_bearer_prefix(monkeypatch):
     assert cfg.has_token
 
 
-def test_config_no_token(monkeypatch):
+def test_config_no_token(monkeypatch, tmp_path):
     monkeypatch.delenv("TRACKMAN_TOKEN", raising=False)
+    monkeypatch.setenv("TRACKMAN_CACHE_DIR", str(tmp_path))  # empty cache
     cfg = Config.from_env()
     assert cfg.token is None
     assert not cfg.has_token
+
+
+def test_config_falls_back_to_cached_token(monkeypatch, tmp_path):
+    import time
+
+    from trackman_mcp import token_store
+
+    monkeypatch.delenv("TRACKMAN_TOKEN", raising=False)
+    monkeypatch.setenv("TRACKMAN_CACHE_DIR", str(tmp_path))
+    # A token whose exp is in the future should be picked up.
+    import base64
+    import json
+
+    def b64(o: dict) -> str:
+        return base64.urlsafe_b64encode(json.dumps(o).encode()).decode().rstrip("=")
+
+    jwt = f"{b64({'alg': 'none'})}.{b64({'exp': int(time.time()) + 600})}.s"
+    token_store.save_token(jwt)
+    cfg = Config.from_env()
+    assert cfg.has_token
+    assert cfg.token == jwt
 
 
 async def test_execute_returns_data():

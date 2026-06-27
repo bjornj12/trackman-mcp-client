@@ -27,23 +27,37 @@ the auth/secret-handling rules.
 ## Setup
 
 ```bash
-uv venv && uv pip install -e '.[dev]'   # install
-cp .env.example .env                     # then paste your token into .env
+uv venv && uv pip install -e '.[login]'   # install (the [login] extra adds Playwright)
 ```
 
-**Get a token** (the portal uses a server-side OAuth client, so the MCP can't
-log in for you — it uses a Bearer token from your session):
-1. Log in at https://portal.trackmangolf.com
-2. DevTools → Network → filter `graphql` → click a request to
-   `api.trackmangolf.com/graphql`
-3. Copy the `Authorization` header value into `TRACKMAN_TOKEN` (the part after
-   `Bearer `; the leading `Bearer ` is tolerated too). Tokens last ~7 days.
+### Sign in (recommended: browser login)
+
+```bash
+trackman-mcp login            # opens a browser; sign in once with email+password
+```
+
+A browser window opens (an **isolated** profile, not your normal Chrome). Sign
+in once; the MCP captures the access token and caches it at
+`~/.trackman-mcp/token.json` (mode `0600`). The session persists, so to refresh
+later (tokens last ~7 days) just run:
+
+```bash
+trackman-mcp login --headless   # silent refresh, no window — cron this weekly
+```
+
+The MCP loads the cached token automatically — no env var needed.
+
+### Alternative: paste a token manually
+
+If you'd rather not use the browser flow, set `TRACKMAN_TOKEN` (it overrides the
+cache). Get it from portal.trackmangolf.com → DevTools → Network → a `graphql`
+request → the `Authorization` header value. See `.env.example`.
 
 ## Run
 
 ```bash
-trackman-mcp                                   # start the MCP (stdio)
-TRACKMAN_TOKEN=… uv run python scripts/validate.py   # validate stats coverage
+trackman-mcp                              # start the MCP (stdio)
+uv run python scripts/validate.py         # validate stats coverage (uses cached token)
 ```
 
 ## MCP tools

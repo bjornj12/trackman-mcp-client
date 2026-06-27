@@ -13,6 +13,9 @@ dependencies = [
 trackman-mcp = "trackman_mcp.server:main"
 
 [project.optional-dependencies]
+login = [
+    "playwright>=1.40",
+]
 dev = [
     "pytest>=8.0",
     "pytest-asyncio>=0.23",

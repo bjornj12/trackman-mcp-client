@@ -119,7 +119,8 @@ async def test_get_activity_summary(patch_transport):
     assert result["items"][0]["activityCount"] == 12
 
 
-async def test_authenticate_without_token(monkeypatch):
+async def test_authenticate_without_token(monkeypatch, tmp_path):
     monkeypatch.delenv("TRACKMAN_TOKEN", raising=False)
+    monkeypatch.setenv("TRACKMAN_CACHE_DIR", str(tmp_path))  # empty cache
     result = await server.authenticate()
     assert result["authenticated"] is False

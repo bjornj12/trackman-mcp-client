@@ -10,6 +10,7 @@ Auth: set TRACKMAN_TOKEN to a Bearer access token captured from an authenticated
 
 from __future__ import annotations
 
+import asyncio
 from typing import Any
 
 from fastmcp import FastMCP
@@ -197,9 +198,54 @@ async def get_activity_summary(
     return data.get("me", {}).get("activitySummary", {})
 
 
+async def _login_cmd(headless: bool) -> int:
+    """Run the browser login, cache the token, and confirm identity."""
+    from .login import TrackmanLoginError, capture_token
+
+    mode = "headless" if headless else "a browser window"
+    print(f"Opening Trackman login ({mode})… sign in if prompted.")
+    try:
+        await capture_token(headless=headless)
+    except TrackmanLoginError as exc:
+        print(f"Login failed: {exc}")
+        return 1
+
+    # Confirm the captured token works (and show who it belongs to).
+    config = Config.from_env()
+    async with TrackmanClient(config) as client:
+        info = await client.whoami()
+    print(f"✓ Logged in as {info.get('name') or info.get('sub')}. "
+          "Token cached — the MCP will use it automatically.")
+    return 0
+
+
 def main() -> None:
-    """Console-script entry point: run the MCP over stdio."""
-    mcp.run()
+    """Console-script entry point.
+
+    Usage:
+        trackman-mcp                 run the MCP server (stdio)
+        trackman-mcp login           open a browser to sign in and cache a token
+        trackman-mcp login --headless  silently refresh using the saved session
+    """
+    import argparse
+    import sys
+
+    parser = argparse.ArgumentParser(prog="trackman-mcp")
+    sub = parser.add_subparsers(dest="command")
+    login = sub.add_parser("login", help="Capture a Trackman token via a browser.")
+    login.add_argument(
+        "--headless", action="store_true",
+        help="Refresh silently using the saved session (no window).",
+    )
+    args = parser.parse_args()
+
+    if args.command == "login":
+        raise SystemExit(asyncio.run(_login_cmd(args.headless)))
+    if args.command is None:
+        mcp.run()
+        return
+    parser.print_help()
+    sys.exit(2)
 
 
 if __name__ == "__main__":
