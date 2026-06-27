@@ -29,3 +29,6 @@ build/
 .DS_Store
 .idea/
 .vscode/
+
+# uv lock (optional to commit; ignoring for now)
+uv.lock

@@ -1,0 +1,173 @@
+"""GraphQL query strings, built from the discovered Trackman schema.
+
+All queries hang off the `me` root (the signed-in user). Field names are taken
+verbatim from introspection — see docs/trackman-api.md.
+"""
+
+# --- Profile + current handicap -------------------------------------------
+PROFILE = """
+query Profile {
+  me {
+    profile {
+      id dbId playerName fullName firstName lastName
+      gender email nationality nationalityCode birthDate
+      picture outdoorHandicap category dexterity
+    }
+    hcp {
+      currentHcp
+      currentRecord { hcpNew scoreDifferential adjustedGrossScore createdAt }
+    }
+  }
+}
+"""
+
+# --- Handicap history ------------------------------------------------------
+HANDICAP_HISTORY = """
+query HandicapHistory($skip: Int, $take: Int, $onlyInAvg: Boolean) {
+  me {
+    hcp {
+      currentHcp
+      playerHistory(skip: $skip, take: $take, onlyInAvg: $onlyInAvg) {
+        totalCount
+        items {
+          createdAt hcpOld hcpNew adjustedGrossScore scoreDifferential
+          isInAvg adjustment
+          scorecard { id course { displayName } grossScore toPar }
+        }
+      }
+    }
+  }
+}
+"""
+
+# --- Sessions / activities list -------------------------------------------
+LIST_SESSIONS = """
+query ListSessions(
+  $skip: Int, $take: Int, $kinds: [ActivityKind!],
+  $timeFrom: DateTime, $timeTo: DateTime, $includeHidden: Boolean
+) {
+  me {
+    activities(
+      skip: $skip, take: $take, kinds: $kinds,
+      timeFrom: $timeFrom, timeTo: $timeTo, includeHidden: $includeHidden
+    ) {
+      totalCount
+      pageInfo { hasNextPage }
+      items {
+        id time kind isHidden
+        ... on RangePracticeActivity {
+          numberOfStrokes clubs
+          location { name }
+        }
+        ... on CoursePlayActivity {
+          gameType grossScore netScore toPar thruHole
+          course { displayName }
+        }
+      }
+    }
+  }
+}
+"""
+
+# --- One activity in full --------------------------------------------------
+# Uses node(id:) so any activity kind resolves; inline fragments pull detail.
+GET_SESSION = """
+query GetSession($id: ID!) {
+  node(id: $id) {
+    __typename
+    ... on RangePracticeActivity {
+      id time kind numberOfStrokes clubs
+      location { name }
+      strokes {
+        time club bayName teePosition targetPosition
+        measurement {
+          ballSpeed carry total carrySide totalSide
+          launchAngle launchDirection landingAngle maxHeight
+          ballSpin spinAxis curve hangTime distanceFromPin targetDistance
+        }
+      }
+    }
+    ... on CoursePlayActivity {
+      id time kind gameType grossScore netScore toPar thruHole
+      course { displayName }
+      scorecard {
+        id par grossScore toPar numberOfHolesPlayed isCompleted
+        stat {
+          driveAverage driveMax greenInRegulation numberOfPutts
+          fairwayHitFairway fairwayHitLeft fairwayHitRight
+          birdies pars bogeys doubleBogeys
+        }
+        holes {
+          holeNumber par strokeIndex distance grossScore netScore
+          putts greenInRegulation hcpStrokes
+          shots {
+            shotNumber club total launchLie finalLie shotResult
+            measurement {
+              ballSpeed clubSpeed smashFactor carry total
+              launchAngle spinRate curve carrySide totalSide landingAngle
+            }
+          }
+        }
+      }
+    }
+  }
+}
+"""
+
+# --- Course rounds (scorecards) -------------------------------------------
+COURSE_ROUNDS = """
+query CourseRounds($skip: Int, $take: Int, $completed: Boolean) {
+  me {
+    scorecards(skip: $skip, take: $take, completed: $completed) {
+      id createdAt startedAt finishedAt
+      course { displayName }
+      teeName par numberOfHolesPlayed isCompleted isInHcp
+      grossScore netScore toPar outScore inScore courseHcp
+      stat {
+        driveAverage driveMax driveTotal driveCount highestBallSpeed
+        fairwayHitFairway fairwayHitLeft fairwayHitRight
+        greenInRegulation numberOfPutts averagePuttsPerHoleDecimal
+        birdies pars bogeys doubleBogeys tripleBogeysOrWorse eagles
+      }
+      holes {
+        holeNumber par strokeIndex distance grossScore netScore
+        putts greenInRegulation hcpStrokes
+      }
+    }
+  }
+}
+"""
+
+# --- Club gapping / dispersion --------------------------------------------
+CLUB_STATS = """
+query ClubStats($includeRetired: Boolean) {
+  me {
+    equipment {
+      clubs(includeRetired: $includeRetired) {
+        id displayName isRetired
+        brand { name }
+        clubHead { clubHeadKind clubHeadType }
+        findMyDistance {
+          numberOfShots
+          clubStats {
+            carry total standardDeviationCarry standardDeviationTotal
+          }
+          dispersionCircle { centerX centerY minAxis maxAxis angle }
+        }
+      }
+    }
+  }
+}
+"""
+
+# --- Activity summary ------------------------------------------------------
+ACTIVITY_SUMMARY = """
+query ActivitySummary($timeFrom: DateTime, $timeTo: DateTime, $skip: Int, $take: Int) {
+  me {
+    activitySummary(timeFrom: $timeFrom, timeTo: $timeTo, skip: $skip, take: $take) {
+      totalCount
+      items { kind activityCount playerCount lastActivityTime }
+    }
+  }
+}
+"""

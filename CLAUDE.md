@@ -70,21 +70,30 @@ corrected by what discovery finds.
 
 ---
 
-## Planned MCP Tools (provisional — confirm in Phase 0)
+## MCP Tools (confirmed against the real API — see `docs/trackman-api.md`)
 
-All tools return **raw, structured data only**. No prose, no advice.
+All tools return **raw, structured data only**. No prose, no advice. Every tool
+calls the single GraphQL endpoint `POST https://api.trackmangolf.com/graphql`
+under the signed-in user's `me` root.
 
-| Tool | Returns |
-|------|---------|
-| `authenticate` | Performs/refreshes login using the user's credentials; establishes a session. Never returns the password or raw token to the model. |
-| `get_profile` | Player identity + current **handicap** and any headline stats. |
-| `list_sessions` | Practice sessions and course rounds (id, date, type, location, summary). Supports date range / type filter. |
-| `get_session` | Full detail for one session: every shot and its metrics. |
-| `get_course_rounds` | Scorecards: per-hole scores, fairways/greens hit, putts. |
-| `get_club_stats` | Per-club aggregates for **gapping**: avg carry, total, ball speed, spin, dispersion. |
-| `get_shot_data` | Shot-level launch-monitor metrics: ball speed, club speed, smash, launch angle, spin rate, carry, total, side/curve, landing angle. |
+| Tool | Backing (under `me`) | Returns |
+|------|----------------------|---------|
+| `authenticate` | OIDC token capture | Validates the captured Bearer token (`TRACKMAN_TOKEN`); reports who you're signed in as. Never echoes the token. |
+| `get_profile` | `profile` + `hcp` | Identity + current **handicap** (`hcp.currentHcp`). |
+| `get_handicap` | `hcp.playerHistory` | Handicap record history (differentials, trend). |
+| `list_sessions` | `activities(kinds,timeFrom,timeTo,skip,take)` | Practice + course activities (id, time, kind, summary). |
+| `get_session` | `node(id)` / `activities` | One activity in full: range strokes or round detail. |
+| `get_course_rounds` | `scorecards(skip,take,completed)` | Scorecards: per-hole scores, FIR/GIR, putts, `stat`. |
+| `get_club_stats` | `equipment.clubs.findMyDistance` | Per-club **gapping**: carry/total, std-dev, dispersion. |
+| `get_shot_data` | `*.measurement` (`Measurement`) | Shot launch metrics: ball/club speed, smash, launch, spin, carry, side, curve, landing angle (~80 fields). |
+| `get_activity_summary` | `activitySummary(timeFrom,timeTo)` | Counts per activity kind over a window. |
 
-When discovery reveals the true endpoints, update this table and keep it honest.
+**Auth reality**: the web portal uses a *confidential* OIDC client (backend-for-
+frontend), so the MCP cannot run the OAuth exchange itself. It authenticates with
+a **Bearer access token captured from an authenticated portal session**
+(`TRACKMAN_TOKEN`), attached as `Authorization: Bearer …`. Tokens last ~1h; on
+`401` the tool returns a clear "re-capture token" error. Full detail and example
+GraphQL queries live in `docs/trackman-api.md`.
 
 ---
 
