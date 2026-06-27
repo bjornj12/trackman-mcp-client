@@ -1,0 +1,31 @@
+# Secrets & credentials — NEVER commit
+.env
+.env.*
+!.env.example
+*.token
+*token*.json
+*credentials*.json
+
+# Local session/auth cache
+.cache/
+.sessions/
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+*.egg-info/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# Tooling
+.uv/
+dist/
+build/
+
+# OS / editor
+.DS_Store
+.idea/
+.vscode/
