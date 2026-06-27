@@ -230,7 +230,26 @@ query { me { equipment { clubs(includeRetired:false) {
 **New tools worth adding** (found in discovery): `get_handicap` (history via
 `hcp.playerHistory`), `get_activity_summary` (`me.activitySummary`). 
 
+**Units** (confirmed against a live account, 2026-06-27): metrics are **metric** —
+`ballSpeed`/`clubSpeed` in **m/s** (e.g. 43.3 m/s), `carry`/`total`/distances in
+**meters**, `spinRate` in rpm, angles in degrees. The analysis skill must convert
+to mph/yards if the user expects imperial.
+
 **Gaps / honest findings**:
 - No local OAuth: the MCP depends on a captured Bearer token (see auth strategy).
 - "Strokes Gained" is **not** a first-class field; it must be derived in the
   analysis skill from shot/score data, not fetched.
+- `get_session` (and `get_shot_data`) currently has inline fragments for
+  `RangePracticeActivity` and `CoursePlayActivity` only. Other shot-bearing
+  kinds — notably `MapMyBagSessionActivity`, `ShotAnalysisSessionActivity`,
+  `RangeFindMyDistanceActivity` — return just the interface fields until
+  fragments are added. (Validated: a `MapMyBagSessionActivity` came back without
+  strokes for this reason.)
+
+## Live validation (2026-06-27)
+
+`scripts/validate.py` run against a real account returned data for **every**
+category: profile, handicap (currentHcp X.X), handicap history (4 records),
+activities (25), course rounds (8), club gapping (9 clubs w/ carry + std-dev),
+activity summary (7 kinds), and shot-level launch metrics (21 shots from a
+course round). All tool GraphQL queries are confirmed correct end-to-end.

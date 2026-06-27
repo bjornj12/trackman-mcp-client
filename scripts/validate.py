@@ -91,8 +91,13 @@ async def main() -> int:
                     results.append((label, "OK", detail))
                 if label == "sessions/activities" and isinstance(value, dict):
                     items = value.get("items") or []
-                    if items:
-                        first_activity_id = items[0].get("id")
+                    # Prefer a kind whose shot detail get_session supports.
+                    supported = {"RANGE_PRACTICE", "COURSE_PLAY"}
+                    pick = next(
+                        (it for it in items if it.get("kind") in supported), None
+                    )
+                    if pick:
+                        first_activity_id = pick.get("id")
             except TrackmanError as exc:
                 results.append((label, "ERROR", str(exc)[:120]))
 
@@ -104,10 +109,18 @@ async def main() -> int:
                 )
                 node = data.get("node") or {}
                 kind = node.get("__typename", "?")
-                has_shots = bool(node.get("strokes") or
-                                 (node.get("scorecard") or {}).get("holes"))
-                results.append(("shot-level detail", "OK" if has_shots else "EMPTY",
-                                f"{kind}"))
+                strokes = node.get("strokes") or []
+                holes = (node.get("scorecard") or {}).get("holes") or []
+                shot_count = len(strokes) + sum(
+                    len(h.get("shots") or []) for h in holes
+                )
+                has_metric = False
+                sample = strokes or [s for h in holes for s in (h.get("shots") or [])]
+                if sample:
+                    has_metric = bool((sample[0].get("measurement") or {}))
+                status = "OK" if (shot_count and has_metric) else "EMPTY"
+                results.append(("shot-level detail", status,
+                                f"{kind}: {shot_count} shot(s) w/ launch metrics"))
             except TrackmanError as exc:
                 results.append(("shot-level detail", "ERROR", str(exc)[:120]))
         else:

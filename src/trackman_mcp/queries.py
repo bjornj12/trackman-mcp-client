@@ -87,6 +87,37 @@ query GetSession($id: ID!) {
         }
       }
     }
+    ... on RangeFindMyDistanceActivity {
+      id time kind numberOfStrokes clubs
+      location { name }
+      strokes {
+        time club
+        measurement {
+          ballSpeed carry total carrySide totalSide
+          launchAngle launchDirection landingAngle ballSpin spinAxis curve
+        }
+      }
+    }
+    ... on MapMyBagSessionActivity {
+      id time kind strokeCount
+      strokes {
+        time club
+        measurement {
+          clubSpeed attackAngle ballSpeed smashFactor carry total
+          launchAngle spinRate spinAxis curve carrySide totalSide landingAngle
+        }
+      }
+    }
+    ... on ShotAnalysisSessionActivity {
+      id time kind strokeCount reportLink
+      strokes {
+        time club
+        measurement {
+          clubSpeed attackAngle ballSpeed smashFactor carry total
+          launchAngle spinRate spinAxis curve carrySide totalSide landingAngle
+        }
+      }
+    }
     ... on CoursePlayActivity {
       id time kind gameType grossScore netScore toPar thruHole
       course { displayName }
