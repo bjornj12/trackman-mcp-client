@@ -506,6 +506,26 @@ async def verify_training_progress(
     }
 
 
+@mcp.tool
+async def build_visualization(data: dict[str, Any]) -> dict[str, Any]:
+    """Render a coaching diagnosis into a self-contained animated HTML page.
+
+    Returns `{html}` — one standalone document (inline canvas/JS, no network, no
+    external resources) ready to drop straight into a Claude **HTML artifact** in
+    Claude Desktop / claude.ai, or to write to a file in Claude Code.
+
+    `data` shape (all optional; the viz adapts): {title, subtitle, diagnosis,
+    handedness "RH"|"LH", shots:[{launchDirection,carry,totalSide,curve}],
+    swing:{clubPath,faceAngle,faceToPath}, targets:[{label,value,target,low,high,
+    met}], blocks:[{name,detail,goal,link}]}. See the trackman-visualizer skill.
+    """
+    from .visualize import build_html
+
+    html = build_html(data)
+    return {"html": html, "bytes": len(html.encode()),
+            "render_as": "text/html artifact"}
+
+
 def main() -> None:
     """Console-script entry point.
 

@@ -32,16 +32,23 @@ Also note **handedness** (`profile.dexterity`) — it sets which way "right" is.
 
 ## Build the artifact
 
-Assemble a data dict (schema in `scripts/visualize.py`) and generate the HTML:
+Assemble a data dict (schema below) and turn it into one **self-contained HTML
+document** (pure canvas/JS, no network, no external resources). Two ways:
 
-```bash
-# write the data dict to a temp json, then:
-uv run python scripts/visualize.py <data.json> <out.html>
-```
+- **MCP tool (preferred):** call `build_visualization(data)` → returns `{html}`.
+- **Direct:** `uv run python scripts/visualize.py <data.json> <out.html>` or
+  `from trackman_mcp.visualize import build_html`.
 
-Or import `build_html(data)` directly. The output is **one self-contained HTML
-file** (pure canvas/JS, no network) — write it OUTSIDE the repo (it contains the
-user's data), e.g. `~/.trackman-mcp/viz/<name>.html`.
+### Present per environment
+
+- **Claude Desktop / claude.ai (artifacts):** take the `html` from
+  `build_visualization` and emit it as an **`text/html` artifact**. It's fully
+  self-contained, so it renders directly in the artifact sandbox (verified — no
+  external requests, no console errors). Don't write a file; use the artifact.
+- **Claude Code (terminal):** write the html OUTSIDE the repo (it contains the
+  user's data), e.g. `~/.trackman-mcp/viz/<name>.html`, and offer to `open` it.
+  Optionally `scripts/check-visualization.py <file>` headless-renders it and
+  screenshots for a quick sanity check.
 
 Data dict shape:
 ```
