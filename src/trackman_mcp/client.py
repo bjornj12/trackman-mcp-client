@@ -88,9 +88,9 @@ class TrackmanClient:
 
         if resp.status_code in (401, 403):
             raise TrackmanAuthError(
-                f"Trackman returned {resp.status_code} — the token is missing, "
-                "expired, or lacks scope. Re-capture TRACKMAN_TOKEN from an "
-                "authenticated portal session."
+                f"Trackman returned {resp.status_code} — your session is expired "
+                "or invalid. Use the `login` tool (or run `trackman-mcp login`) "
+                "to sign in again."
             )
         if resp.status_code >= 400:
             raise TrackmanError(

@@ -78,7 +78,8 @@ under the signed-in user's `me` root.
 
 | Tool | Backing (under `me`) | Returns |
 |------|----------------------|---------|
-| `authenticate` | OIDC token capture | Validates the captured Bearer token (`TRACKMAN_TOKEN`); reports who you're signed in as. Never echoes the token. |
+| `authenticate` | OIDC token capture | Validates the current token; reports who you're signed in as (or that the session expired). Never echoes the token. |
+| `login` | Browser capture | (Re)authenticate. Tries a silent refresh first; if the saved session expired, opens a browser window to sign in. The friendly recovery path when tools report an expired session. |
 | `get_profile` | `profile` + `hcp` | Identity + current **handicap** (`hcp.currentHcp`). |
 | `get_handicap` | `hcp.playerHistory` | Handicap record history (differentials, trend). |
 | `list_sessions` | `activities(kinds,timeFrom,timeTo,skip,take)` | Practice + course activities (id, time, kind, summary). |
@@ -136,6 +137,12 @@ frontend), so the MCP cannot run the OAuth exchange itself. It authenticates wit
 a **Bearer access token captured from an authenticated portal session**, attached
 as `Authorization: Bearer …`. Tokens last ~7 days (observed `iat`→`exp` =
 604800s); on `401` the tool returns a clear "re-capture token" error.
+
+**Recovery when expired**: data tools auto-retry once after a silent headless
+refresh (`_try_silent_refresh`), so a stale 7-day token renews invisibly while the
+browser session is still valid. When the browser session itself expires, tools
+return a clear "session expired — use the `login` tool" message, and the `login`
+tool opens a sign-in window (falling back from a fast silent attempt).
 
 **Getting the token** — two paths (`Config.from_env`: `TRACKMAN_TOKEN` env wins,
 else the cached token):

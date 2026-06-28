@@ -31,11 +31,42 @@ mcp = FastMCP(
 )
 
 
-async def _run(query: str, variables: dict[str, Any] | None = None) -> dict[str, Any]:
-    """Execute a GraphQL query with a fresh authenticated client."""
+# Seconds to wait for a silent refresh before giving up (dead session fails fast).
+SILENT_REFRESH_TIMEOUT = 30.0
+
+
+async def _try_silent_refresh() -> bool:
+    """Try to refresh the token headlessly using the persisted browser session.
+
+    Returns True if a fresh token was captured (the saved portal session is still
+    valid), False otherwise (session expired, or Playwright not installed).
+    """
+    try:
+        from .login import capture_token
+
+        await capture_token(headless=True, timeout_seconds=SILENT_REFRESH_TIMEOUT)
+        return True
+    except Exception:
+        return False
+
+
+async def _run(
+    query: str, variables: dict[str, Any] | None = None, _allow_refresh: bool = True
+) -> dict[str, Any]:
+    """Execute a GraphQL query with a fresh authenticated client.
+
+    On an auth failure, transparently try a one-time silent token refresh (using
+    the saved browser session) and retry. If that fails too, the auth error
+    propagates with guidance to re-login.
+    """
     config = Config.from_env()
-    async with TrackmanClient(config) as client:
-        return await client.execute(query, variables)
+    try:
+        async with TrackmanClient(config) as client:
+            return await client.execute(query, variables)
+    except TrackmanAuthError:
+        if _allow_refresh and await _try_silent_refresh():
+            return await _run(query, variables, _allow_refresh=False)
+        raise
 
 
 @mcp.tool
@@ -51,15 +82,18 @@ async def authenticate() -> dict[str, Any]:
     if not config.has_token:
         return {
             "authenticated": False,
-            "reason": "TRACKMAN_TOKEN is not set.",
-            "how_to_fix": (
-                "Log in at https://portal.trackmangolf.com, capture the Bearer "
-                "access token the page sends to api.trackmangolf.com/graphql, "
-                "and set it as TRACKMAN_TOKEN. See docs/trackman-api.md."
-            ),
+            "reason": "No Trackman token. You're not signed in.",
+            "how_to_fix": "Use the `login` tool to sign in (it opens a browser).",
         }
-    async with TrackmanClient(config) as client:
-        info = await client.whoami()
+    try:
+        async with TrackmanClient(config) as client:
+            info = await client.whoami()
+    except TrackmanAuthError:
+        return {
+            "authenticated": False,
+            "reason": "Your Trackman session has expired.",
+            "how_to_fix": "Use the `login` tool to sign in again.",
+        }
     # Return identity claims only; never echo the token.
     return {
         "authenticated": True,
@@ -67,6 +101,47 @@ async def authenticate() -> dict[str, Any]:
         "name": info.get("name"),
         "email": info.get("email"),
     }
+
+
+@mcp.tool
+async def login(open_browser: bool = True) -> dict[str, Any]:
+    """Sign in to Trackman — the easy way to (re)authenticate when expired.
+
+    Tries a **silent** refresh first (using the saved browser session — no window,
+    instant if the session is still valid). If the session has expired and
+    `open_browser` is true, it **opens a browser window** for you to sign in once;
+    the new token is then captured and cached automatically.
+
+    Returns who you're signed in as, or a clear message if login couldn't complete.
+    """
+    from .login import TrackmanLoginError, capture_token
+
+    # 1) Silent refresh (fast; works while the saved session is valid).
+    try:
+        await capture_token(headless=True, timeout_seconds=SILENT_REFRESH_TIMEOUT)
+    except Exception:
+        # 2) Session likely expired — open a window for an interactive sign-in.
+        if not open_browser:
+            return {
+                "success": False,
+                "message": "Saved session expired and open_browser is false. "
+                           "Call login with open_browser=true, or run "
+                           "`trackman-mcp login` in a terminal.",
+            }
+        try:
+            await capture_token(headless=False)
+        except TrackmanLoginError as exc:
+            return {"success": False, "message": f"Login didn't complete: {exc}"}
+
+    config = Config.from_env()
+    try:
+        async with TrackmanClient(config) as client:
+            info = await client.whoami()
+    except TrackmanAuthError:
+        return {"success": False,
+                "message": "Captured a token but it was rejected — try login again."}
+    return {"success": True, "name": info.get("name") or info.get("subject"),
+            "message": "Signed in. The MCP will use this automatically."}
 
 
 @mcp.tool
