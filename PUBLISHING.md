@@ -26,18 +26,37 @@ Because the project doesn't exist on PyPI yet, use the **pending publisher** flo
 
 That's all the PyPI side needs — no token to generate or paste.
 
-## Cut a release
-
-The tag must match `version` in `pyproject.toml` (the workflow enforces it).
+## Cut a release — one command
 
 ```bash
-# bump the version in pyproject.toml first if needed, commit it, then:
-git tag v0.1.0
-git push origin v0.1.0
+scripts/release.sh patch          # or: minor | major | an explicit X.Y.Z
+scripts/release.sh 0.2.0 --dry-run        # preview everything, change nothing
+scripts/release.sh patch --auto-approve   # skip the manual approval pause
 ```
 
-The `Publish to PyPI` workflow then runs ruff + mypy + pytest, builds the sdist
-and wheel, and uploads them to PyPI over OIDC. After it succeeds, anyone can:
+`release.sh` does the whole thing end to end:
+
+1. bumps the version in `pyproject.toml`, `server.json`, and both plugin
+   manifests (consistently — it fails if any file's shape drifted),
+2. runs the quality gate (`ruff` + `mypy` + `pytest`),
+3. commits, tags `vX.Y.Z`, and pushes — triggering the PyPI publish workflow,
+4. waits for the workflow and pauses for your one-click approval of the `pypi`
+   environment (or approves it for you with `--auto-approve`),
+5. waits until PyPI actually serves the new version, then
+6. runs `mcp-publisher publish` to update the MCP Registry.
+
+The Claude Code plugin needs no publish step — it tracks `main`, and the
+`plugin.json` bump signals the new version.
+
+### Manual equivalent
+
+The tag must match `version` in `pyproject.toml` (the workflow enforces it):
+
+```bash
+git tag v0.1.0 && git push origin v0.1.0   # then approve the `pypi` deployment
+```
+
+After the workflow succeeds, anyone can:
 
 ```bash
 uvx trackman-mcp            # or: uv tool install trackman-mcp / pipx install trackman-mcp
