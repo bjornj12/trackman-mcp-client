@@ -1,9 +1,9 @@
-"""Full-flow tests for every MCP tool against mocked API responses.
+"""Full-flow tests for the MCP tools against mocked API responses.
 
 Each test feeds a realistic GraphQL `data` payload through a MockTransport and
-asserts the tool returns the right stats substructure. This proves the
-extraction logic for all 9 tools without needing a live token; the only thing
-left for real validation is live data.
+asserts the tool returns the right stats substructure — proving the extraction,
+fail-loud, and no-token-echo behavior of the data, auth, and store tools without
+needing a live token. (verify_training_progress has its own file.)
 """
 
 from __future__ import annotations
@@ -124,3 +124,65 @@ async def test_authenticate_without_token(monkeypatch, tmp_path):
     monkeypatch.setenv("TRACKMAN_CACHE_DIR", str(tmp_path))  # empty cache
     result = await server.authenticate()
     assert result["authenticated"] is False
+
+
+async def test_get_session_raises_on_missing_node(patch_transport):
+    # The API returns {"node": null} for an unknown id; fail loudly, don't
+    # return None and pretend success.
+    patch_transport({"node": None})
+    with pytest.raises(ValueError, match="nope"):
+        await server.get_session(activity_id="nope")
+
+
+async def test_get_shot_data_raises_on_missing_node(patch_transport):
+    patch_transport({"node": None})
+    with pytest.raises(ValueError, match="nope"):
+        await server.get_shot_data(activity_id="nope")
+
+
+async def test_authenticate_success_never_echoes_token(monkeypatch):
+    secret = "super.secret.jwt"
+
+    async def fake_whoami(self):
+        return {"sub": "u1", "name": "Pat", "email": "p@x.io"}
+
+    monkeypatch.setenv("TRACKMAN_TOKEN", secret)
+    monkeypatch.setattr(TrackmanClient, "whoami", fake_whoami)
+    result = await server.authenticate()
+    assert result["authenticated"] is True
+    assert result["name"] == "Pat"
+    # The bearer token must never appear anywhere in the tool response.
+    assert secret not in repr(result)
+
+
+async def test_analyze_and_store_session_persists(patch_transport, monkeypatch, tmp_path):
+    monkeypatch.setenv("TRACKMAN_CACHE_DIR", str(tmp_path))
+    patch_transport({"node": {
+        "__typename": "RangePracticeActivity", "kind": "RANGE_PRACTICE",
+        "time": "2026-06-01T10:00:00Z",
+        "strokes": [{"club": "DRIVER", "time": f"2026-06-01T10:{i:02d}:00Z",
+                     "measurement": {"carry": 200.0 + i}} for i in range(0, 30, 2)],
+    }})
+    rec = await server.analyze_and_store_session(activity_id="r1")
+    assert rec["session_id"] == "r1"
+    # It was actually stored and is retrievable via the index tool.
+    listed = await server.list_session_analyses()
+    assert listed["count"] == 1
+    assert listed["latest_id"] == "r1"
+
+
+async def test_training_plan_lifecycle(monkeypatch, tmp_path):
+    monkeypatch.setenv("TRACKMAN_CACHE_DIR", str(tmp_path))
+    saved = await server.save_training_plan({"title": "Driver path", "focus": ["slice"]})
+    pid = saved["id"]
+    nxt = await server.get_next_training()
+    assert nxt["has_plan"] is True
+    assert nxt["plan"]["id"] == pid
+    done = await server.mark_training_done(pid, result_session_id="r1")
+    assert done["status"] == "done"
+    assert (await server.get_next_training())["has_plan"] is False
+
+
+async def test_save_training_plan_rejects_empty():
+    with pytest.raises(ValueError):
+        await server.save_training_plan({})

@@ -30,7 +30,9 @@ DATA SCHEMA (all fields optional; the viz adapts):
 
 from __future__ import annotations
 
+import html as _html
 import json
+import re
 import sys
 
 _TEMPLATE = r"""<!doctype html>
@@ -101,6 +103,14 @@ const DATA = __DATA__;
 const RH = (DATA.handedness||"RH")!=="LH";   // sign of "right" for the golfer
 // ---------- helpers ----------
 const $=s=>document.querySelector(s);
+// Safe DOM builders — never assign data to innerHTML (avoids HTML/JS injection
+// from Trackman field values or model-supplied coaching text).
+function el(tag,cls,text){const e=document.createElement(tag);
+  if(cls)e.className=cls; if(text!=null)e.textContent=String(text); return e;}
+function safeHref(u){ if(typeof u!=='string') return null;
+  try{const url=new URL(u,location.href);
+    return (url.protocol==='http:'||url.protocol==='https:')?url.href:null;}
+  catch(e){return null;} }
 function fit(c){const ctx=c.getContext('2d');const s=window.devicePixelRatio||1;
   const w=c.clientWidth;const h=c.height* (w/c.width); c.width=w*s;c.height=h*s;ctx.scale(s,s);
   return {ctx,w,h};}
@@ -140,7 +150,7 @@ function drawFlight(){
   const p0={x:sx(0),y:sy(0)};
   const end={x:sx(A.side),y:sy(A.carry)};
   const launchDx=Math.tan(A.launch*Math.PI/180)*(A.carry*0.55);
-  const ctrl={x:sx((RH?launchDx:launchDx)),y:sy(A.carry*0.5)};
+  const ctrl={x:sx(launchDx),y:sy(A.carry*0.5)};   // sx() already handles handedness
   ctx.strokeStyle="#28406a";ctx.lineWidth=2;ctx.beginPath();
   for(let t=0;t<=1;t+=0.02){const p=bez(p0,ctrl,end,t); t==0?ctx.moveTo(p.x,p.y):ctx.lineTo(p.x,p.y);}
   ctx.stroke();
@@ -172,7 +182,9 @@ function drawSwing(){
   ctx.beginPath();ctx.moveTo(cx,cy+L*0.5);ctx.lineTo(cx,cy-L);ctx.stroke();ctx.setLineDash([]);
   ctx.fillStyle="#5b6a85";ctx.font="11px sans-serif";ctx.fillText("target",cx+6,cy-L+12);
   // ideal path (green) slight in-to-out
-  function ang(a){return (RH?-a:a)*Math.PI/180;} // +deg = in-to-out (to the right of target for RH)
+  // +deg = in-to-out: to the RIGHT of target for RH (matches the ball-flight
+  // panel's sx convention), to the LEFT for LH. (Was mirrored for RH.)
+  function ang(a){return (RH?a:-a)*Math.PI/180;}
   function line(angDeg,color,wid,dash){
     const a=ang(angDeg)-Math.PI/2; // measured from vertical
     ctx.strokeStyle=color;ctx.lineWidth=wid;ctx.setLineDash(dash||[]);
@@ -219,33 +231,42 @@ $('#swingWhy').innerHTML =
 
 // ---------- target bars ----------
 function renderBars(){
-  const host=$('#bars');host.innerHTML="";
+  const host=$('#bars');host.textContent="";
   (DATA.targets||[]).forEach(t=>{
-    const met=t.met; const pill = met===true?'<span class="pill ok">met</span>':
-      met===false?'<span class="pill no">not yet</span>':'<span class="pill na">no data</span>';
-    const lo=t.low, hi=t.high;
-    let zone="", val="";
-    const div=document.createElement('div');div.className='bar';
+    const met=t.met;
+    const div=el('div','bar');
+    const h3=el('h3');
+    const left=el('span');
+    left.appendChild(document.createTextNode((t.label!=null?t.label:'')+' '));
+    left.appendChild(el('span','pill '+(met===true?'ok':met===false?'no':'na'),
+      met===true?'met':met===false?'not yet':'no data'));
+    const right=el('span'); right.style.color='var(--mut)';
+    right.textContent='you '+(t.value??'—')+' · target '+(t.target||'');
+    h3.appendChild(left); h3.appendChild(right); div.appendChild(h3);
     // scale: pad around value and zone
+    const lo=t.low, hi=t.high;
+    const track=el('div','track');
     const nums=[t.value,lo,hi].filter(v=>typeof v==='number');
     if(nums.length){
       const mn=Math.min(...nums), mx=Math.max(...nums); const pad=(mx-mn||1)*0.4;
       const lo2=mn-pad, hi2=mx+pad, span=hi2-lo2;
       const pct=v=>((v-lo2)/span*100);
-      if(typeof lo==='number'&&typeof hi==='number')
-        zone=`<div class="zone" style="left:${pct(lo)}%;width:${pct(hi)-pct(lo)}%"></div>`;
-      if(typeof t.value==='number')
-        val=`<div class="val" style="left:${pct(t.value)}%"></div>`;
+      if(typeof lo==='number'&&typeof hi==='number'){
+        const z=el('div','zone'); z.style.left=pct(lo)+'%'; z.style.width=(pct(hi)-pct(lo))+'%';
+        track.appendChild(z);}
+      if(typeof t.value==='number'){
+        const v=el('div','val'); v.style.left=pct(t.value)+'%'; track.appendChild(v);}
     }
-    div.innerHTML=`<h3><span>${t.label} ${pill}</span>`+
-      `<span style="color:var(--mut)">you ${t.value??'—'} · target ${t.target||''}</span></h3>`+
-      `<div class="track">${zone}${val}</div>`;
+    div.appendChild(track);
     host.appendChild(div);
   });
-  const plan=$('#plan');plan.innerHTML="";
+  const plan=$('#plan');plan.textContent="";
   (DATA.blocks||[]).forEach(b=>{const li=document.createElement('li');
-    li.innerHTML=`<b>${b.name||''}</b> — ${b.detail||b.goal||''} `+
-      (b.link?`<a href="${b.link}" target="_blank">video ↗</a>`:'');
+    li.appendChild(el('b',null,b.name||''));
+    li.appendChild(document.createTextNode(' — '+(b.detail||b.goal||'')+' '));
+    const href=safeHref(b.link);
+    if(href){const a=el('a',null,'video ↗'); a.href=href; a.target='_blank';
+      a.rel='noopener noreferrer'; li.appendChild(a);}
     plan.appendChild(li);});
 }
 
@@ -257,13 +278,44 @@ window.addEventListener('resize',()=>{drawFlight();drawSwing();});
 """
 
 
+def _json_for_script(data: dict) -> str:
+    """Serialize `data` so it is safe to embed inside an inline <script> block.
+
+    Neutralizes the characters that could break out of the HTML script context
+    (`<`, `>`, `&`) and the two line terminators JS treats as newlines. These
+    become valid JS string escapes, so the parsed value is unchanged — but no
+    field value (even one containing `</script>`) can close the element.
+    """
+    payload = json.dumps(data)
+    return (
+        payload.replace("<", "\\u003c")
+        .replace(">", "\\u003e")
+        .replace("&", "\\u0026")
+        .replace("\u2028", "\\u2028")
+        .replace("\u2029", "\\u2029")
+    )
+
+
 def build_html(data: dict) -> str:
-    html = _TEMPLATE
-    html = html.replace("__DATA__", json.dumps(data))
-    html = html.replace("__TITLE__", str(data.get("title", "Trackman Coach")))
-    html = html.replace("__SUBTITLE__", str(data.get("subtitle", "")))
-    html = html.replace("__DIAGNOSIS__", str(data.get("diagnosis", "")))
-    return html
+    """Render the visualization HTML, escaping all data against injection.
+
+    `title`/`subtitle`/`diagnosis` are HTML-escaped (they land in the document
+    body); the rest of `data` is embedded as breakout-safe JSON and rendered
+    client-side via textContent (see the template's safe DOM helpers).
+    """
+    replacements = {
+        "__DATA__": _json_for_script(data),
+        "__TITLE__": _html.escape(str(data.get("title", "Trackman Coach"))),
+        "__SUBTITLE__": _html.escape(str(data.get("subtitle", ""))),
+        "__DIAGNOSIS__": _html.escape(str(data.get("diagnosis", ""))),
+    }
+    # Single left-to-right pass: replacement text is never re-scanned, so a data
+    # value that happens to equal a placeholder can't corrupt the output.
+    return re.sub(
+        r"__DATA__|__TITLE__|__SUBTITLE__|__DIAGNOSIS__",
+        lambda m: replacements[m.group(0)],
+        _TEMPLATE,
+    )
 
 
 # Fictional sample data (not any real golfer) — for `--demo` only.

@@ -13,30 +13,26 @@ from __future__ import annotations
 import json
 import re
 import time
+from pathlib import Path
 from typing import Any
 
+from . import storage
 from .token_store import cache_dir
 
 MAX_PLANS = 50
 
 
-def store_path():
+def store_path() -> Path:
     return cache_dir() / "training-plans.json"
 
 
 def _read() -> list[dict[str, Any]]:
-    path = store_path()
-    if not path.exists():
-        return []
-    try:
-        data = json.loads(path.read_text())
-    except (ValueError, OSError):
-        return []
+    data = storage.read_json(store_path(), default=[])
     return data if isinstance(data, list) else []
 
 
 def _write(plans: list[dict[str, Any]]) -> None:
-    store_path().write_text(json.dumps(plans, indent=2))
+    storage.write_secure(store_path(), json.dumps(plans, indent=2))
 
 
 def _by_created(plans: list[dict[str, Any]]) -> list[dict[str, Any]]:

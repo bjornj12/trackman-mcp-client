@@ -16,6 +16,8 @@ import time
 from dataclasses import dataclass
 from pathlib import Path
 
+from . import storage
+
 # Clock skew margin: treat a token as expired this many seconds early.
 EXPIRY_SKEW_SECONDS = 60
 
@@ -24,8 +26,7 @@ def cache_dir() -> Path:
     """Directory for cached token + browser profile. Override via TRACKMAN_CACHE_DIR."""
     override = os.environ.get("TRACKMAN_CACHE_DIR")
     base = Path(override) if override else Path.home() / ".trackman-mcp"
-    base.mkdir(parents=True, exist_ok=True)
-    return base
+    return storage.secure_dir(base)
 
 
 def token_path() -> Path:
@@ -34,9 +35,7 @@ def token_path() -> Path:
 
 def browser_profile_dir() -> Path:
     """Persistent browser profile so the portal session survives between logins."""
-    path = cache_dir() / "browser-profile"
-    path.mkdir(parents=True, exist_ok=True)
-    return path
+    return storage.secure_dir(cache_dir() / "browser-profile")
 
 
 def decode_exp(token: str) -> int | None:
@@ -73,21 +72,15 @@ def save_token(access_token: str) -> CachedToken:
         "expires_at": expires_at,
         "captured_at": int(time.time()),
     }
-    path = token_path()
-    # Write then tighten permissions to user-only.
-    path.write_text(json.dumps(data))
-    os.chmod(path, 0o600)
+    # Atomic, user-only (0600) write — never briefly world-readable.
+    storage.write_secure(token_path(), json.dumps(data))
     return CachedToken(access_token=access_token, expires_at=expires_at)
 
 
 def load_token() -> CachedToken | None:
     """Load the cached token, or None if absent/unreadable."""
-    path = token_path()
-    if not path.exists():
-        return None
-    try:
-        data = json.loads(path.read_text())
-    except (ValueError, OSError):
+    data = storage.read_json(token_path(), default=None)
+    if not isinstance(data, dict):
         return None
     token = data.get("access_token")
     if not token:

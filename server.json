@@ -1,0 +1,27 @@
+{
+  "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
+  "name": "io.github.bjornj12/trackman-mcp",
+  "description": "Fetch your Trackman Golf stats (handicap, rounds, shots, club gapping) as MCP tools.",
+  "version": "0.1.0",
+  "repository": {
+    "url": "https://github.com/bjornj12/trackman-mcp-client",
+    "source": "github"
+  },
+  "packages": [
+    {
+      "registryType": "pypi",
+      "registryBaseUrl": "https://pypi.org",
+      "identifier": "trackman-mcp",
+      "version": "0.1.0",
+      "transport": { "type": "stdio" },
+      "environmentVariables": [
+        {
+          "name": "TRACKMAN_TOKEN",
+          "description": "Bearer access token captured from an authenticated Trackman portal session. Optional if you have run `trackman-mcp login` (the server then loads the cached token automatically).",
+          "isRequired": false,
+          "isSecret": true
+        }
+      ]
+    }
+  ]
+}

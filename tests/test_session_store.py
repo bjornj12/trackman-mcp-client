@@ -75,3 +75,19 @@ def test_stored_ids_for_dedup():
 def test_empty_store():
     assert session_store.list_analyses() == []
     assert session_store.latest_analysis() is None
+
+
+def test_corrupt_store_is_backed_up_not_wiped():
+    # A truncated/corrupt file must not silently erase history without a trace.
+    session_store.save_analysis(_rec("a", "2026-01-01T10:00:00Z"))
+    path = session_store.store_path()
+    path.write_text("[ truncated json")
+    assert session_store.list_analyses() == []  # degrades gracefully
+    assert path.with_suffix(path.suffix + ".corrupt").exists()  # but preserved
+
+
+def test_store_file_is_user_only_readable():
+    import stat
+    session_store.save_analysis(_rec("a", "2026-01-01T10:00:00Z"))
+    mode = stat.S_IMODE(session_store.store_path().stat().st_mode)
+    assert mode == 0o600

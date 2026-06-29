@@ -12,11 +12,33 @@ then `playwright install chromium` (or have Google Chrome installed).
 from __future__ import annotations
 
 import asyncio
+import sys
+from typing import Any
+from urllib.parse import urlparse
 
 from . import token_store
 
 PORTAL_URL = "https://portal.trackmangolf.com/"
 GRAPHQL_HOST = "api.trackmangolf.com/graphql"
+# Only capture a bearer token from requests to the real Trackman domain — a
+# substring check like ("trackman" in url) would also match nottrackman.evil.com.
+TOKEN_HOST_SUFFIX = "trackmangolf.com"
+
+
+def _is_trackman_host(url: str) -> bool:
+    """True if `url`'s host is trackmangolf.com or a subdomain of it."""
+    host = (urlparse(url).hostname or "").lower()
+    return host == TOKEN_HOST_SUFFIX or host.endswith("." + TOKEN_HOST_SUFFIX)
+
+
+def _log(message: str) -> None:
+    """Emit progress to stderr.
+
+    Never stdout: this code is reachable from the running stdio MCP server (the
+    `login` tool and the silent-refresh retry), and stdout there carries the
+    JSON-RPC protocol stream.
+    """
+    print(message, file=sys.stderr)
 
 
 class TrackmanLoginError(Exception):
@@ -42,34 +64,32 @@ async def capture_token(headless: bool = False, timeout_seconds: float = 300.0) 
 
     captured: dict[str, str] = {}
     done = asyncio.Event()
-    seen = {"requests": 0, "bearer_hosts": set()}
+    seen: dict[str, Any] = {"requests": 0, "bearer_hosts": set()}
 
     def _take(token: str, source: str) -> None:
         if token and token.count(".") >= 2 and "token" not in captured:
             captured["token"] = token.strip()
-            print(f"  ▸ captured token ({source}).")
+            _log(f"  ▸ captured token ({source}).")
             done.set()
 
-    async def inspect_request(request: object) -> None:
+    async def inspect_request(request: Any) -> None:
         try:
             url = getattr(request, "url", "")
-            if "trackman" not in url or "token" in captured:
+            if "token" in captured or not _is_trackman_host(url):
                 return
             seen["requests"] += 1
             headers = await request.all_headers()
             auth = headers.get("authorization") or headers.get("Authorization")
             if auth and auth.lower().startswith("bearer "):
-                from urllib.parse import urlparse
-
                 seen["bearer_hosts"].add(urlparse(url).netloc)
                 _take(auth[7:], "network")
         except Exception:
             pass
 
-    def on_request(request: object) -> None:
+    def on_request(request: Any) -> None:
         asyncio.create_task(inspect_request(request))
 
-    async def poll_storage(page: object) -> None:
+    async def poll_storage(page: Any) -> None:
         """Some SPAs keep the token in web storage (oidc-client). Poll for it."""
         script = """() => {
             const hits = [];
@@ -97,26 +117,25 @@ async def capture_token(headless: bool = False, timeout_seconds: float = 300.0) 
             await asyncio.sleep(2)
 
     async with async_playwright() as p:
-        launch_kwargs = {
-            "user_data_dir": str(token_store.browser_profile_dir()),
-            "headless": headless,
-        }
+        profile = str(token_store.browser_profile_dir())
         try:
             context = await p.chromium.launch_persistent_context(
-                channel="chrome", **launch_kwargs
+                profile, channel="chrome", headless=headless
             )
         except Exception:
-            context = await p.chromium.launch_persistent_context(**launch_kwargs)
+            context = await p.chromium.launch_persistent_context(
+                profile, headless=headless
+            )
 
         context.on("request", on_request)
         page = context.pages[0] if context.pages else await context.new_page()
         poller = None
         try:
             await page.goto(PORTAL_URL, wait_until="domcontentloaded")
-            print("  ▸ portal open — sign in if prompted; waiting for token…")
+            _log("  ▸ portal open — sign in if prompted; waiting for token…")
             poller = asyncio.create_task(poll_storage(page))
             await asyncio.wait_for(done.wait(), timeout=timeout_seconds)
-        except asyncio.TimeoutError as exc:
+        except TimeoutError as exc:
             hosts = ", ".join(sorted(seen["bearer_hosts"])) or "none"
             raise TrackmanLoginError(
                 "No token captured before timeout. "

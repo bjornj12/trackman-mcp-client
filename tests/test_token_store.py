@@ -6,8 +6,6 @@ import base64
 import json
 import time
 
-import pytest
-
 from trackman_mcp import token_store
 
 

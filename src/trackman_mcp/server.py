@@ -11,7 +11,7 @@ Auth: set TRACKMAN_TOKEN to a Bearer access token captured from an authenticated
 from __future__ import annotations
 
 import asyncio
-from typing import Any
+from typing import Any, Literal
 
 from fastmcp import FastMCP
 
@@ -69,7 +69,7 @@ async def _run(
         raise
 
 
-@mcp.tool
+@mcp.tool(annotations={"readOnlyHint": True, "idempotentHint": True, "openWorldHint": True})
 async def authenticate() -> dict[str, Any]:
     """Verify the configured Trackman token and report who you're signed in as.
 
@@ -103,7 +103,7 @@ async def authenticate() -> dict[str, Any]:
     }
 
 
-@mcp.tool
+@mcp.tool(annotations={"readOnlyHint": False, "idempotentHint": False, "openWorldHint": True})
 async def login(open_browser: bool = True) -> dict[str, Any]:
     """Sign in to Trackman — the easy way to (re)authenticate when expired.
 
@@ -144,7 +144,7 @@ async def login(open_browser: bool = True) -> dict[str, Any]:
             "message": "Signed in. The MCP will use this automatically."}
 
 
-@mcp.tool
+@mcp.tool(annotations={"readOnlyHint": True, "idempotentHint": True, "openWorldHint": True})
 async def get_profile() -> dict[str, Any]:
     """Get the player's profile and current handicap.
 
@@ -155,7 +155,7 @@ async def get_profile() -> dict[str, Any]:
     return data.get("me", {})
 
 
-@mcp.tool
+@mcp.tool(annotations={"readOnlyHint": True, "idempotentHint": True, "openWorldHint": True})
 async def get_handicap(skip: int = 0, take: int = 20, only_in_avg: bool = False) -> dict[str, Any]:
     """Get handicap history: per-round differentials and how the index moved.
 
@@ -171,7 +171,7 @@ async def get_handicap(skip: int = 0, take: int = 20, only_in_avg: bool = False)
     return data.get("me", {}).get("hcp", {})
 
 
-@mcp.tool
+@mcp.tool(annotations={"readOnlyHint": True, "idempotentHint": True, "openWorldHint": True})
 async def list_sessions(
     skip: int = 0,
     take: int = 25,
@@ -205,7 +205,7 @@ async def list_sessions(
     return data.get("me", {}).get("activities", {})
 
 
-@mcp.tool
+@mcp.tool(annotations={"readOnlyHint": True, "idempotentHint": True, "openWorldHint": True})
 async def get_session(activity_id: str) -> dict[str, Any]:
     """Get one activity in full by its id.
 
@@ -213,10 +213,13 @@ async def get_session(activity_id: str) -> dict[str, Any]:
     For COURSE_PLAY: the scorecard with per-hole scores and per-shot metrics.
     """
     data = await _run(queries.GET_SESSION, {"id": activity_id})
-    return data.get("node", {})
+    node = data.get("node")
+    if not node:
+        raise ValueError(f"No activity found for id {activity_id!r}.")
+    return node
 
 
-@mcp.tool
+@mcp.tool(annotations={"readOnlyHint": True, "idempotentHint": True, "openWorldHint": True})
 async def get_course_rounds(
     skip: int = 0, take: int = 20, completed: bool | None = True
 ) -> dict[str, Any]:
@@ -235,7 +238,7 @@ async def get_course_rounds(
     return {"scorecards": data.get("me", {}).get("scorecards", [])}
 
 
-@mcp.tool
+@mcp.tool(annotations={"readOnlyHint": True, "idempotentHint": True, "openWorldHint": True})
 async def get_club_stats(include_retired: bool = False) -> dict[str, Any]:
     """Get per-club gapping and dispersion ("My Bag" / Find My Distance).
 
@@ -246,7 +249,7 @@ async def get_club_stats(include_retired: bool = False) -> dict[str, Any]:
     return data.get("me", {}).get("equipment", {})
 
 
-@mcp.tool
+@mcp.tool(annotations={"readOnlyHint": True, "idempotentHint": True, "openWorldHint": True})
 async def get_shot_data(activity_id: str) -> dict[str, Any]:
     """Get shot-level launch-monitor metrics for one activity.
 
@@ -255,10 +258,13 @@ async def get_shot_data(activity_id: str) -> dict[str, Any]:
     side, curve, landing angle, …). Pass a RANGE_PRACTICE or COURSE_PLAY id.
     """
     data = await _run(queries.GET_SESSION, {"id": activity_id})
-    return data.get("node", {})
+    node = data.get("node")
+    if not node:
+        raise ValueError(f"No activity found for id {activity_id!r}.")
+    return node
 
 
-@mcp.tool
+@mcp.tool(annotations={"readOnlyHint": True, "idempotentHint": True, "openWorldHint": True})
 async def get_activity_summary(
     time_from: str | None = None,
     time_to: str | None = None,
@@ -294,7 +300,7 @@ async def _login_cmd(headless: bool) -> int:
     return 0
 
 
-@mcp.tool
+@mcp.tool(annotations={"readOnlyHint": False, "idempotentHint": False, "openWorldHint": True})
 async def analyze_and_store_session(activity_id: str) -> dict[str, Any]:
     """Analyze one session, store the analysis locally, and return it.
 
@@ -333,7 +339,7 @@ async def analyze_and_store_session(activity_id: str) -> dict[str, Any]:
     return record
 
 
-@mcp.tool
+@mcp.tool(annotations={"readOnlyHint": True, "idempotentHint": True, "openWorldHint": False})
 async def list_session_analyses() -> dict[str, Any]:
     """List stored session analyses, most recent first (max 30).
 
@@ -358,7 +364,7 @@ async def list_session_analyses() -> dict[str, Any]:
             "items": index}
 
 
-@mcp.tool
+@mcp.tool(annotations={"readOnlyHint": True, "idempotentHint": True, "openWorldHint": False})
 async def get_session_analysis(activity_id: str) -> dict[str, Any]:
     """Get one full stored session-analysis record by id."""
     from . import session_store
@@ -368,7 +374,7 @@ async def get_session_analysis(activity_id: str) -> dict[str, Any]:
     }
 
 
-@mcp.tool
+@mcp.tool(annotations={"readOnlyHint": False, "idempotentHint": False, "openWorldHint": False})
 async def save_training_plan(plan: dict[str, Any]) -> dict[str, Any]:
     """Save a prescribed training plan so the coach remembers it later.
 
@@ -386,10 +392,12 @@ async def save_training_plan(plan: dict[str, Any]) -> dict[str, Any]:
     """
     from . import training_store
 
+    if not isinstance(plan, dict) or not plan:
+        raise ValueError("plan must be a non-empty object describing the session.")
     return training_store.save_plan(plan)
 
 
-@mcp.tool
+@mcp.tool(annotations={"readOnlyHint": True, "idempotentHint": True, "openWorldHint": False})
 async def get_next_training() -> dict[str, Any]:
     """Get the next pending training session — the answer to 'what's today's training?'.
 
@@ -406,8 +414,10 @@ async def get_next_training() -> dict[str, Any]:
     return {"has_plan": True, "plan": plan, "pending_count": len(pending)}
 
 
-@mcp.tool
-async def list_training_plans(status: str | None = None) -> dict[str, Any]:
+@mcp.tool(annotations={"readOnlyHint": True, "idempotentHint": True, "openWorldHint": False})
+async def list_training_plans(
+    status: Literal["pending", "done"] | None = None,
+) -> dict[str, Any]:
     """List stored training plans (oldest→newest). Optional status filter
     ('pending' or 'done')."""
     from . import training_store
@@ -416,7 +426,7 @@ async def list_training_plans(status: str | None = None) -> dict[str, Any]:
     return {"count": len(plans), "plans": plans}
 
 
-@mcp.tool
+@mcp.tool(annotations={"readOnlyHint": False, "idempotentHint": True, "openWorldHint": False})
 async def mark_training_done(
     plan_id: str, result_session_id: str | None = None
 ) -> dict[str, Any]:
@@ -430,7 +440,7 @@ async def mark_training_done(
     return updated or {"error": f"no training plan with id {plan_id}"}
 
 
-@mcp.tool
+@mcp.tool(annotations={"readOnlyHint": True, "idempotentHint": True, "openWorldHint": True})
 async def verify_training_progress(
     plan_id: str, activity_id: str | None = None
 ) -> dict[str, Any]:
@@ -457,24 +467,32 @@ async def verify_training_progress(
 
     target_clubs = {analysis.canonical_club(s.get("club")) for s in specs if s.get("club")}
 
-    async def _strokes_for(aid: str) -> tuple[dict, list]:
+    async def _strokes_for(aid: str) -> tuple[dict[str, Any], list[dict[str, Any]]]:
         node = (await _run(queries.SESSION_MEASUREMENTS, {"id": aid})).get("node") or {}
         return node, (node.get("strokes") or [])
 
+    scan_window = 20
     chosen_id = activity_id
-    node, strokes = ({}, [])
+    node: dict[str, Any] = {}
+    strokes: list[dict[str, Any]] = []
     if chosen_id:
         node, strokes = await _strokes_for(chosen_id)
     else:
         # Newest first: first session that has shots for a target club.
         acts = (await _run(queries.LIST_SESSIONS, {
-            "skip": 0, "take": 20, "kinds": None,
+            "skip": 0, "take": scan_window, "kinds": None,
             "timeFrom": None, "timeTo": None, "includeHidden": False,
         })).get("me", {}).get("activities", {}).get("items", [])
         for it in acts:
             aid = it.get("id")
             if not aid:
                 continue
+            # Pre-filter: if the list already names this session's clubs and none
+            # match a target club, skip the per-session measurement fetch.
+            if target_clubs and it.get("clubs") is not None:
+                listed = {analysis.canonical_club(c) for c in it["clubs"]}
+                if not (listed & target_clubs):
+                    continue
             n, s = await _strokes_for(aid)
             has_target_club = any(
                 analysis.canonical_club(st.get("club")) in target_clubs for st in s
@@ -484,9 +502,11 @@ async def verify_training_progress(
                 break
 
     if not strokes:
+        scope = "the session you gave" if activity_id else \
+            f"the last {scan_window} activities"
         return {"plan_id": plan_id, "checked_session": chosen_id,
                 "has_data": False,
-                "message": "No recent session with shots for this plan's target club(s)."}
+                "message": f"No shots for this plan's target club(s) in {scope}."}
 
     verdict = analysis.verify_targets(strokes, specs)
     return {
@@ -506,7 +526,7 @@ async def verify_training_progress(
     }
 
 
-@mcp.tool
+@mcp.tool(annotations={"readOnlyHint": True, "idempotentHint": True, "openWorldHint": False})
 async def build_visualization(data: dict[str, Any]) -> dict[str, Any]:
     """Render a coaching diagnosis into a self-contained animated HTML page.
 

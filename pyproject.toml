@@ -1,13 +1,32 @@
 [project]
-name = "trackman-mcp-client"
+name = "trackman-mcp"
 version = "0.1.0"
 description = "MCP server that fetches a user's Trackman Golf stats (handicap, rounds, practice, shots, club gapping)."
 readme = "README.md"
 requires-python = ">=3.11"
+license = "MIT"
+license-files = ["LICENSE"]
+authors = [{ name = "Bjorn Jonsson", email = "bjorn@avo.sh" }]
+keywords = ["mcp", "model-context-protocol", "trackman", "golf", "llm", "claude"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Developers",
+    "Intended Audience :: End Users/Desktop",
+    "Programming Language :: Python :: 3 :: Only",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Games/Entertainment",
+    "Topic :: Scientific/Engineering :: Information Analysis",
+]
 dependencies = [
     "fastmcp>=2.0.0",
     "httpx>=0.27",
 ]
+
+[project.urls]
+Homepage = "https://github.com/bjornj12/trackman-mcp-client"
+Repository = "https://github.com/bjornj12/trackman-mcp-client"
+Issues = "https://github.com/bjornj12/trackman-mcp-client/issues"
 
 [project.scripts]
 trackman-mcp = "trackman_mcp.server:main"
@@ -19,7 +38,8 @@ login = [
 dev = [
     "pytest>=8.0",
     "pytest-asyncio>=0.23",
-    "respx>=0.21",
+    "ruff>=0.6",
+    "mypy>=1.10",
 ]
 
 [build-system]
@@ -32,3 +52,19 @@ packages = ["src/trackman_mcp"]
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
 testpaths = ["tests"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+src = ["src", "tests"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B"]
+ignore = ["E501"]  # long lines are caught by formatter intent, not blocking here
+
+[tool.mypy]
+python_version = "3.11"
+files = ["src"]
+ignore_missing_imports = true
+check_untyped_defs = true
+warn_unused_ignores = true

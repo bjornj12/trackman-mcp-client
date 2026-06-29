@@ -94,16 +94,25 @@ def _extract_strokes(detail: dict) -> list[dict]:
     return detail.get("strokes") or []
 
 
-def _duration_minutes(strokes: list[dict]) -> int:
+def _duration_minutes(strokes: list[dict]) -> int | None:
+    """Session length in minutes, or None when it can't be determined.
+
+    Returns None (UNKNOWN) — not 0 — when fewer than two strokes carry a
+    parseable time, or when every time is identical (zero span). A zeroed
+    duration must never demote a high-volume session to a warm-up.
+    """
     times = [t for t in (_parse_time(s.get("time")) for s in strokes) if t]
     if len(times) < 2:
-        return 0
-    return round((max(times) - min(times)).total_seconds() / 60)
+        return None
+    span = (max(times) - min(times)).total_seconds()
+    if span <= 0:
+        return None
+    return round(span / 60)
 
 
-def _seriousness(strokes: int, minutes: float, n_clubs: int, kind: str | None) -> float:
+def _seriousness(strokes: int, minutes: float | None, n_clubs: int, kind: str | None) -> float:
     s_strokes = min(strokes / FULL_STROKES, 1.0)
-    s_minutes = min(minutes / FULL_MINUTES, 1.0)
+    s_minutes = min((minutes or 0) / FULL_MINUTES, 1.0)  # unknown duration = no signal
     s_clubs = min(n_clubs / FULL_CLUBS, 1.0)
     score = 0.5 * s_strokes + 0.3 * s_minutes + 0.2 * s_clubs
     if kind in SERIOUS_KINDS:
@@ -111,9 +120,17 @@ def _seriousness(strokes: int, minutes: float, n_clubs: int, kind: str | None) -
     return round(score, 2)
 
 
-def _is_warmup_sized(strokes: int, minutes: float) -> bool:
-    """True if the session is too small to be a genuine improvement attempt."""
-    return strokes < WARMUP_MAX_STROKES or minutes < WARMUP_MAX_MINUTES
+def _is_warmup_sized(strokes: int, minutes: float | None) -> bool:
+    """True if the session is too small to be a genuine improvement attempt.
+
+    With an unknown duration we fall back to stroke count alone — we never let a
+    missing/zeroed time demote a high-volume session.
+    """
+    if strokes < WARMUP_MAX_STROKES:
+        return True
+    if minutes is not None and minutes < WARMUP_MAX_MINUTES:
+        return True
+    return False
 
 
 def _course_difficulty(scorecard: dict) -> dict:
@@ -155,7 +172,8 @@ def classify_session(detail: dict) -> dict:
     strokes = _extract_strokes(detail)
     n = len(strokes)
     minutes = _duration_minutes(strokes)
-    clubs = sorted({s.get("club") for s in strokes if s.get("club")})
+    over = f"over {minutes} min" if minutes is not None else "of unknown duration"
+    clubs = sorted({str(c) for s in strokes if (c := s.get("club"))})
     seriousness = _seriousness(n, minutes, len(clubs), kind)
 
     if n == 0:
@@ -165,7 +183,7 @@ def classify_session(detail: dict) -> dict:
         # Hard floor: too small to be training, even for a "serious" kind.
         category, improve = "warmup", False
         note = (
-            f"only {n} strokes over {minutes} min — a warm-up / quick check, "
+            f"only {n} strokes {over} — a warm-up / quick check, "
             "not counted as an attempt to improve"
         )
         if kind in SERIOUS_KINDS:
@@ -173,13 +191,13 @@ def classify_session(detail: dict) -> dict:
         reasons = [note]
     elif seriousness >= SERIOUS_THRESHOLD or kind in SERIOUS_KINDS:
         category, improve = "practice", True
-        reasons = [f"{n} strokes over {minutes} min across {len(clubs)} club(s)"]
+        reasons = [f"{n} strokes {over} across {len(clubs)} club(s)"]
         if kind in SERIOUS_KINDS:
             reasons.append(f"{kind} session (inherently focused practice)")
     else:
         category, improve = "warmup", False
         reasons = [
-            f"only {n} strokes over {minutes} min, {len(clubs)} club(s) — "
+            f"only {n} strokes {over}, {len(clubs)} club(s) — "
             "below the practice threshold (treated as a warm-up, not an "
             "attempt to improve)"
         ]
@@ -323,18 +341,20 @@ def _summary(classification: dict, metrics: dict, normalized: dict) -> str:
         )
         return " ".join(bits)
     if cat == "practice":
+        pmin = metrics.get("duration_minutes")
+        over = f"over {pmin} min" if pmin is not None else "of unknown duration"
         return (
-            f"Practice session: {metrics.get('stroke_count')} strokes over "
-            f"{metrics.get('duration_minutes')} min across "
-            f"{len(metrics.get('clubs_used', []))} clubs "
+            f"Practice session: {metrics.get('stroke_count')} strokes {over} "
+            f"across {len(metrics.get('clubs_used', []))} clubs "
             f"(seriousness {classification['seriousness']}). Counted as an "
             "attempt to improve."
         )
     if cat == "warmup":
+        wmin = classification["duration_minutes"]
+        over = f"over {wmin} min" if wmin is not None else "of unknown duration"
         return (
-            f"Warm-up only: {classification['stroke_count']} strokes over "
-            f"{classification['duration_minutes']} min — not counted as an "
-            "improvement session."
+            f"Warm-up only: {classification['stroke_count']} strokes {over} — "
+            "not counted as an improvement session."
         )
     return "No analyzable shot data for this session."
 
@@ -342,7 +362,7 @@ def _summary(classification: dict, metrics: dict, normalized: dict) -> str:
 # --- training-target verification -----------------------------------------
 
 def shot_metric_values(
-    strokes: list[dict], metric: str, club_canon: str | None = None
+    strokes: list[dict], metric: str | None, club_canon: str | None = None
 ) -> list[float]:
     """Collect a measurement metric across strokes, optionally filtered by club."""
     out: list[float] = []

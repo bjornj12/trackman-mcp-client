@@ -87,6 +87,34 @@ def test_game_is_classified_as_game():
     assert c["is_improvement_attempt"] is False  # games tracked separately
 
 
+def _strokes_no_time(n: int, clubs: list[str]) -> dict:
+    """A practice node whose strokes carry NO parseable time."""
+    out = [{"club": clubs[i % len(clubs)], "measurement": {"carry": 150.0}}
+           for i in range(n)]
+    return {"__typename": "RangePracticeActivity", "kind": "RANGE_PRACTICE",
+            "time": "2026-06-01T10:00:00Z", "strokes": out}
+
+
+def test_missing_stroke_times_do_not_force_warmup():
+    # 30 strokes across 4 clubs but no timestamps: duration is UNKNOWN, not 0.
+    # A real practice session must not be demoted to warm-up by a data quirk.
+    c = analysis.classify_session(_strokes_no_time(30, ["DRIVER", "IRON7", "WEDGE56", "IRON5"]))
+    assert c["duration_minutes"] is None
+    assert c["category"] == "practice"
+    assert c["is_improvement_attempt"] is True
+
+
+def test_identical_timestamps_treated_as_unknown_duration():
+    strokes = [{"club": ["DRIVER", "IRON7", "WEDGE56", "IRON5"][i % 4],
+                "time": "2026-06-01T10:00:00Z",
+                "measurement": {"carry": 150.0}} for i in range(30)]
+    node = {"__typename": "RangePracticeActivity", "kind": "RANGE_PRACTICE",
+            "time": "2026-06-01T10:00:00Z", "strokes": strokes}
+    c = analysis.classify_session(node)
+    assert c["duration_minutes"] is None  # zero span = unknown, not 0
+    assert c["category"] == "practice"
+
+
 # --- metrics --------------------------------------------------------------
 
 def test_practice_metrics_count_clubs_and_duration():

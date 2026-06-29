@@ -225,12 +225,21 @@ query ClubStats($includeRetired: Boolean) {
 """
 
 # --- Full shot measurements for one session (verification) -----------------
-# Stroke-bearing kinds expose the full Measurement type (face/path/etc.).
+# Bay/sim kinds expose the full Measurement type (face/path/etc.). Range kinds
+# don't capture clubPath/faceAngle, but DO capture ball/launch metrics — select
+# those so plans targeting e.g. carry/totalSide/curve can be graded on the range
+# (the primary venue). clubPath/faceAngle targets remain bay-only by nature.
 SESSION_MEASUREMENTS = """
 query SessionMeasurements($id: ID!) {
   node(id: $id) {
     __typename
     ... on PlayerActivity { id time kind }
+    ... on RangePracticeActivity { strokes { club measurement {
+      spinAxis curve launchDirection ballSpin ballSpeed
+      carry total totalSide carrySide launchAngle landingAngle maxHeight } } }
+    ... on RangeFindMyDistanceActivity { strokes { club measurement {
+      spinAxis curve launchDirection ballSpin ballSpeed
+      carry total totalSide carrySide launchAngle landingAngle } } }
     ... on SimulatorSessionActivity { strokes { club measurement {
       clubPath faceAngle faceToPath spinAxis curve launchDirection
       spinRate ballSpeed smashFactor carry total totalSide carrySide

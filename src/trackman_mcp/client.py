@@ -14,7 +14,7 @@ from typing import Any
 
 import httpx
 
-from .config import Config, USERINFO_ENDPOINT
+from .config import USERINFO_ENDPOINT, Config
 
 
 class TrackmanError(Exception):
@@ -37,13 +37,13 @@ class TrackmanClient:
     """Authenticated GraphQL client. Use as an async context manager."""
 
     def __init__(
-        self, config: Config, transport: httpx.BaseTransport | None = None
+        self, config: Config, transport: httpx.AsyncBaseTransport | None = None
     ):
         self._config = config
         self._transport = transport  # injectable for tests
         self._client: httpx.AsyncClient | None = None
 
-    async def __aenter__(self) -> "TrackmanClient":
+    async def __aenter__(self) -> TrackmanClient:
         headers = {"Content-Type": "application/json", "Accept": "application/json"}
         if self._config.token:
             headers["Authorization"] = f"Bearer {self._config.token}"

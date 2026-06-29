@@ -199,15 +199,18 @@ trackman-mcp-client/
 ├── tests/
 │   ├── fixtures/                  # scrubbed recorded responses
 │   └── test_tools.py
-└── .claude/
-    └── skills/                    # coaching brain (see below)
+├── .claude-plugin/               # Claude Code plugin + marketplace manifests
+├── .mcp.json                     # MCP server declaration (for the plugin)
+├── server.json                   # MCP Registry manifest
+└── skills/                       # coaching brain (see below); plugin-root layout
 ```
 
 ---
 
 ## Skills (the coaching brain)
 
-Project-local skills live in `.claude/skills/`. Each has a `SKILL.md`.
+Skills live in `skills/` (the Claude Code plugin-root layout, so they ship with
+the plugin). Each has a `SKILL.md`.
 
 - **`trackman-api-discovery`** — Phase 0. Reverse-engineer the portal's auth +
   data endpoints via the browser network panel; write them into

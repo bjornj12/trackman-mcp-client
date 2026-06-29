@@ -30,8 +30,7 @@ build/
 .idea/
 .vscode/
 
-# uv lock (optional to commit; ignoring for now)
-uv.lock
+# uv.lock IS committed for reproducible installs (do not ignore).
 
 # Generated visualizations (contain personal data)
 viz/

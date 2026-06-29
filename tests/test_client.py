@@ -84,3 +84,22 @@ async def test_execute_requires_token():
     async with TrackmanClient(_config(token=None), transport=transport) as client:
         with pytest.raises(TrackmanAuthError):
             await client.execute("query { __typename }")
+
+
+async def test_whoami_returns_claims():
+    def handler(request: httpx.Request) -> httpx.Response:
+        assert request.headers["Authorization"] == "Bearer test-token"
+        return httpx.Response(200, json={"sub": "u1", "name": "Pat Golfer", "email": "p@x.io"})
+
+    transport = httpx.MockTransport(handler)
+    async with TrackmanClient(_config(), transport=transport) as client:
+        info = await client.whoami()
+    assert info["sub"] == "u1"
+    assert info["name"] == "Pat Golfer"
+
+
+async def test_whoami_raises_auth_error_on_401():
+    transport = httpx.MockTransport(lambda r: httpx.Response(401, text="expired"))
+    async with TrackmanClient(_config(), transport=transport) as client:
+        with pytest.raises(TrackmanAuthError):
+            await client.whoami()
