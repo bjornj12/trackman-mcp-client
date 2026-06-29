@@ -37,6 +37,21 @@ async def test_register_skill_prompts_registers_each():
     assert USER_FACING <= names
 
 
+def test_desktop_prompt_body_is_preferred():
+    # The served body is the client-agnostic PROMPT.md, not the Claude Code SKILL.md.
+    coaching = next(s for s in prompts.load_skills() if s.name == "golf-coaching")
+    assert "call the tools directly" in coaching.body.lower()
+
+
+def test_served_prompts_have_no_claude_code_only_language():
+    # Prompts run in any client (e.g. Claude Desktop) — no subagent/fork/skill-
+    # dispatch mechanics should leak into the served text.
+    for s in prompts.load_skills():
+        low = s.body.lower()
+        assert "subagent" not in low, f"{s.name} leaks subagent language"
+        assert "forked" not in low, f"{s.name} leaks fork language"
+
+
 async def test_server_exposes_skill_prompts():
     from trackman_mcp import server
     names = {p.name for p in await server.mcp.list_prompts()}
