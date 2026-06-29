@@ -52,7 +52,13 @@ def _parse_front_matter(md: str) -> tuple[dict[str, str], str]:
 
 
 def load_skills() -> list[SkillPrompt]:
-    """Load user-facing skills (excluding dev tooling), newest names sorted."""
+    """Load user-facing skills (excluding dev tooling), name-sorted.
+
+    Metadata (name/description) comes from each skill's SKILL.md front matter.
+    The prompt *body* comes from a client-agnostic PROMPT.md when present (the
+    version tuned for being invoked as an MCP prompt, e.g. in Claude Desktop —
+    no subagents/skill-dispatch); otherwise it falls back to the SKILL.md body.
+    """
     d = skills_dir()
     if not d:
         return []
@@ -63,10 +69,12 @@ def load_skills() -> list[SkillPrompt]:
         skill_md = sub / "SKILL.md"
         if not skill_md.is_file():
             continue
-        fm, body = _parse_front_matter(skill_md.read_text(encoding="utf-8"))
+        fm, skill_body = _parse_front_matter(skill_md.read_text(encoding="utf-8"))
         name = fm.get("name") or sub.name
         description = fm.get("description") or f"The {name} skill."
-        out.append(SkillPrompt(name=name, description=description, body=body or skill_md.read_text(encoding="utf-8")))
+        prompt_md = sub / "PROMPT.md"
+        body = prompt_md.read_text(encoding="utf-8").strip() if prompt_md.is_file() else skill_body
+        out.append(SkillPrompt(name=name, description=description, body=body))
     return out
 
 
