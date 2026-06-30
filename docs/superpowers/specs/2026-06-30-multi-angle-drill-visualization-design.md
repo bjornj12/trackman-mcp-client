@@ -164,16 +164,52 @@ consistent with this repo's "fail loudly" convention (see `CLAUDE.md`).
 
 ## Skill wiring
 
-This is what actually fixes the illegible card shown in practice today.
-`trackman-visualizer/PROMPT.md`'s "one drill at a time" section currently points at
-"the client's own HTML/SVG artifact capability" — that line is replaced with: call
-`build_visualization({..., drill: {archetype, name}})` and embed the returned
-fragment inside the existing per-drill card markup (title, progress dots, feel-cue
-quote, reps/club/order, Watch-the-drill link, Prev/Next — all untouched), instead of
-freehand-authoring the diagram. `golf-practice-at-home/PROMPT.md` step 4 gets the
-same pointer. `drill-library`'s curated table gains one new column, `archetype`, so
-the mapping from drill → archetype id is explicit data rather than inferred by the
-model each time.
+This is what actually fixes the illegible card shown in practice today. Both
+`trackman-visualizer/SKILL.md` (Claude Code) **and** `trackman-visualizer/PROMPT.md`
+(served as an MCP prompt to every other client, including Claude Desktop — see
+below) currently point at "the client's own HTML/SVG artifact capability" /
+"switch camera (top-down / face-on / side)" for the "one drill at a time" case.
+Both get the same edit: call `build_visualization({..., drill: {archetype, name}})`
+and embed the returned fragment inside the existing per-drill card markup (title,
+progress dots, feel-cue quote, reps/club/order, Watch-the-drill link, Prev/Next —
+all untouched), instead of freehand-authoring the diagram. `golf-practice-at-home`'s
+`SKILL.md` and `PROMPT.md` (step 4) get the same pointer. `drill-library`'s curated
+table (in both files) gains one new column, `archetype`, so the mapping from drill →
+archetype id is explicit data rather than inferred by the model each time.
+
+## Desktop compatibility & verification
+
+This project ships to Claude Desktop as a `.mcpb` extension (`mcpb/manifest.json`),
+and skill content reaches Desktop **only** through `prompts.py`
+(`register_skill_prompts` → `load_skills()`), which reads each skill's `PROMPT.md`
+— never `SKILL.md` and never the `skills/` directory directly. Desktop has no
+skill-dispatch/subagent system; a user invokes the MCP prompt (e.g.
+`trackman-visualizer`) from the prompt picker and the model follows that body
+directly. So:
+
+- Editing only `SKILL.md` would silently not reach Desktop users — both files must
+  change together (covered above).
+- `swing_archetypes.py` is a plain module under `src/trackman_mcp/`; no manifest or
+  packaging change is needed (the wheel's existing `force-include` of `skills/`
+  already covers the updated `PROMPT.md` files).
+- The released `.mcpb` extension installs `trackman-mcp` **from PyPI at runtime**
+  (`mcpb/pyproject.toml`: `trackman-mcp[login]>=0.3.1`) — it does not bundle local
+  source. Rebuilding/reinstalling the `.mcpb` locally would therefore still test
+  the last published release, not this change. It is not a valid verification path
+  until a real release is cut, and is out of scope here.
+- **Verification gate before this is considered done:** a `trackman-golf-dev` entry
+  now exists in `~/Library/Application Support/Claude/claude_desktop_config.json`,
+  pointing at this checkout (`uv run --directory <repo> trackman-mcp` — confirmed
+  importable). The closing step of the implementation plan is: restart Claude
+  Desktop and manually confirm:
+  1. `build_visualization` called with a `drill` payload returns valid fragment
+     HTML and renders as an interactive artifact in a Desktop chat (not just in
+     Claude Code).
+  2. The `trackman-visualizer` and `golf-practice-at-home` prompts appear in
+     Desktop's prompt picker and, when invoked, produce a per-drill card using the
+     new diagram exactly as in Claude Code.
+  This is a manual check (Desktop is a native GUI app outside automated reach) and
+  is not something `pytest` alone can confirm.
 
 ## Testing & error handling
 
