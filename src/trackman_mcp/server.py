@@ -518,9 +518,12 @@ async def build_visualization(data: dict[str, Any]) -> dict[str, Any]:
     external resources) ready to drop straight into a Claude **HTML artifact**.
 
     `data` shape (all optional; the viz adapts): {title, subtitle, diagnosis,
-    handedness "RH"|"LH", shots:[{launchDirection,carry,totalSide,curve}],
-    swing:{clubPath,faceAngle,faceToPath}, targets:[{label,value,target,low,high,
-    met}], blocks:[{name,detail,goal,link}]}. See the trackman-visualizer prompt.
+    handedness "RH"|"LH", shots:[{launchDirection,launchAngle,carry,total,
+    totalSide,curve,maxHeight,landingAngle,hangTime}],
+    swing:{clubPath,faceAngle,faceToPath}, targets:[{label,value,target,low,
+    high,met}], blocks:[{name,detail,goal,where "range"|"home",
+    links:[{label,url}]}]}. Renders the measured flight (side view + top-down,
+    animated) and drills grouped range/home. See the trackman-visualizer prompt.
     """
     from .visualize import build_html
 

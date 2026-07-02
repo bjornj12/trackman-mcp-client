@@ -2,10 +2,12 @@
 
 Renders three things from real Trackman data, no external dependencies (pure
 canvas/JS in one HTML file):
-  1. Ball-flight curve — top-down tracer of the shot shape + dispersion.
-  2. Swing path — animated clubhead on the actual path vs ideal, with the face
+  1. Flight side view — the real measured trajectory (launch/apex/landing),
+     every shot faint + the average animated, roll after carry.
+  2. Ball-flight top-down — per-shot curved tracers + the average animated.
+  3. Swing path — animated clubhead on the actual path vs ideal, with the face
      angle, annotating *why* the ball curves.
-  3. Target progress — bars of current value vs the plan's target.
+  4. Target progress + Fix-it drills grouped range/home with multiple links.
 
 Usage (library):
     from scripts.visualize import build_html
@@ -19,12 +21,16 @@ Usage (CLI):
 DATA SCHEMA (all fields optional; the viz adapts):
 {
   "title": str, "subtitle": str, "diagnosis": str, "handedness": "RH"|"LH",
-  "shots": [{"launchDirection": deg, "carry": m, "totalSide": m,
-             "curve": m, "club": str}],            # one or many
+  "shots": [{"launchDirection": deg, "launchAngle": deg, "carry": m,
+             "total": m, "totalSide": m, "curve": m, "maxHeight": m,
+             "landingAngle": deg, "hangTime": s, "club": str}],  # one or many
   "swing": {"clubPath": deg, "faceAngle": deg, "faceToPath": deg},
   "targets": [{"label": str, "value": num, "target": str,
                "met": bool|None, "low": num, "high": num}],
-  "blocks": [{"name": str, "detail": str, "goal": str, "link": str}]
+  "blocks": [{"name": str, "detail": str, "goal": str,
+              "where": "range"|"home",             # default "range"
+              "links": [{"label": str, "url": str}],  # 1..n vetted links
+              "link": str}]                        # legacy single link
 }
 """
 
@@ -479,9 +485,15 @@ _DEMO = {
                  "→ ball starts left and curves right.",
     "handedness": "RH",
     "shots": [
-        {"launchDirection": -2, "carry": 200, "totalSide": 25, "curve": 14},
-        {"launchDirection": -3, "carry": 205, "totalSide": 20, "curve": 11},
-        {"launchDirection": -1, "carry": 195, "totalSide": 30, "curve": 18},
+        {"launchDirection": -2, "launchAngle": 11.8, "carry": 200, "total": 226,
+         "totalSide": 25, "curve": 14, "maxHeight": 24, "landingAngle": 36,
+         "hangTime": 5.6},
+        {"launchDirection": -3, "launchAngle": 12.6, "carry": 205, "total": 228,
+         "totalSide": 20, "curve": 11, "maxHeight": 27, "landingAngle": 38,
+         "hangTime": 5.9},
+        {"launchDirection": -1, "launchAngle": 10.9, "carry": 195, "total": 221,
+         "totalSide": 30, "curve": 18, "maxHeight": 22, "landingAngle": 34,
+         "hangTime": 5.4},
     ],
     "swing": {"clubPath": -5.0, "faceAngle": -1.0, "faceToPath": 4.0},
     "targets": [
@@ -490,9 +502,17 @@ _DEMO = {
         {"label": "curve", "value": 14.0, "target": "|x| < 4", "low": -4, "high": 4, "met": False},
     ],
     "blocks": [
-        {"name": "Headcover drill", "detail": "Headcover outside the ball; swing inside it.",
-         "link": "https://hackmotion.com/headcover-drill/"},
-        {"name": "Gate aimed right", "detail": "Sticks pointing right of target; exit to right field."},
+        {"name": "Headcover drill", "where": "range",
+         "detail": "Headcover outside the ball; swing inside it.",
+         "links": [
+             {"label": "video", "url": "https://hackmotion.com/headcover-drill/"},
+             {"label": "more drills",
+              "url": "https://www.youtube.com/results?search_query=headcover+slice+drill"},
+         ]},
+        {"name": "Gate aimed right", "where": "range",
+         "detail": "Sticks pointing right of target; exit to right field."},
+        {"name": "Wall drill", "where": "home",
+         "detail": "Wall a clubhead off the trail shoulder; slow swings that miss it."},
     ],
 }
 
