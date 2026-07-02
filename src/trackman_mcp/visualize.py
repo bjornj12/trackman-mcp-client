@@ -1,11 +1,13 @@
 """Generate a self-contained animated HTML visualization of a coaching diagnosis.
 
-Renders three things from real Trackman data, no external dependencies (pure
+Renders four things from real Trackman data, no external dependencies (pure
 canvas/JS in one HTML file):
-  1. Ball-flight curve — top-down tracer of the shot shape + dispersion.
-  2. Swing path — animated clubhead on the actual path vs ideal, with the face
+  1. Flight side view — the real measured trajectory (launch/apex/landing),
+     every shot faint + the average animated, roll after carry.
+  2. Ball-flight top-down — per-shot curved tracers + the average animated.
+  3. Swing path — animated clubhead on the actual path vs ideal, with the face
      angle, annotating *why* the ball curves.
-  3. Target progress — bars of current value vs the plan's target.
+  4. Target progress + Fix-it drills grouped range/home with multiple links.
 
 Usage (library):
     from scripts.visualize import build_html
@@ -19,12 +21,16 @@ Usage (CLI):
 DATA SCHEMA (all fields optional; the viz adapts):
 {
   "title": str, "subtitle": str, "diagnosis": str, "handedness": "RH"|"LH",
-  "shots": [{"launchDirection": deg, "carry": m, "totalSide": m,
-             "curve": m, "club": str}],            # one or many
+  "shots": [{"launchDirection": deg, "launchAngle": deg, "carry": m,
+             "total": m, "totalSide": m, "curve": m, "maxHeight": m,
+             "landingAngle": deg, "hangTime": s, "club": str}],  # one or many
   "swing": {"clubPath": deg, "faceAngle": deg, "faceToPath": deg},
   "targets": [{"label": str, "value": num, "target": str,
                "met": bool|None, "low": num, "high": num}],
-  "blocks": [{"name": str, "detail": str, "goal": str, "link": str}]
+  "blocks": [{"name": str, "detail": str, "goal": str,
+              "where": "range"|"home",             # default "range"
+              "links": [{"label": str, "url": str}],  # 1..n vetted links
+              "link": str}]                        # legacy single link
 }
 """
 
@@ -50,6 +56,7 @@ _TEMPLATE = r"""<!doctype html>
   .grid{display:grid;grid-template-columns:1fr 1fr;gap:18px}
   @media(max-width:840px){.grid{grid-template-columns:1fr}}
   .card{background:var(--panel);border-radius:12px;padding:16px}
+  .hero{margin:0 0 18px}
   .card h2{font-size:15px;margin:0 0 10px;color:#bcd2f0;letter-spacing:.3px;text-transform:uppercase}
   canvas{width:100%;height:auto;display:block;background:#0e1626;border-radius:8px}
   .legend{display:flex;gap:14px;flex-wrap:wrap;color:var(--mut);font-size:12px;margin-top:8px}
@@ -64,14 +71,24 @@ _TEMPLATE = r"""<!doctype html>
   .pill.ok{background:rgba(39,192,138,.2);color:var(--good)}
   .pill.no{background:rgba(255,107,107,.2);color:var(--bad)}
   .pill.na{background:#22304a;color:var(--mut)}
-  .plan{margin-top:18px} .plan li{margin:6px 0;color:#cfe0f5}
-  .plan a{color:var(--acc)} .full{grid-column:1/-1}
+  .fixhead{margin:10px 0 4px;font-size:13px;color:#bcd2f0;letter-spacing:.3px;text-transform:uppercase}
+  .fixlist{margin:0 0 6px;padding-left:20px} .fixlist li{margin:6px 0;color:#cfe0f5}
+  .fixlist a{color:var(--acc)} .full{grid-column:1/-1}
   button{background:#1c2c47;color:var(--ink);border:1px solid #2b4068;border-radius:8px;
     padding:6px 12px;cursor:pointer;font-size:13px} button:hover{background:#22365a}
 </style></head>
 <body><div class="wrap">
   <h1>__TITLE__</h1><p class="sub">__SUBTITLE__</p>
   <div class="diag">__DIAGNOSIS__</div>
+  <div class="card hero" id="sideCard"><h2>Ball flight — side view</h2>
+    <canvas id="side" width="1040" height="330"></canvas>
+    <div class="legend">
+      <span><i class="dot" style="background:#4ea1ff"></i>average flight</span>
+      <span><i class="dot" style="background:rgba(78,161,255,.4)"></i>each shot</span>
+      <span><i class="dot" style="background:#ffd166"></i>roll after carry</span>
+    </div>
+    <div class="why" id="sideWhy"></div>
+  </div>
   <div class="grid">
     <div class="card"><h2>Ball flight</h2>
       <canvas id="flight" width="500" height="520"></canvas>
@@ -93,8 +110,10 @@ _TEMPLATE = r"""<!doctype html>
     </div>
     <div class="card full"><h2>Progress vs targets</h2>
       <div class="bars" id="bars"></div>
-      <div class="plan"><ul id="plan"></ul></div>
       <button onclick="replay()">↻ Replay animation</button>
+    </div>
+    <div class="card full"><h2>Fix it — drills</h2>
+      <div id="fixit"></div>
     </div>
   </div>
 </div>
@@ -124,9 +143,103 @@ const avg=k=>shots.reduce((a,s)=>a+(typeof s[k]==='number'?s[k]:0),0)/shots.leng
 const A={launch:avg('launchDirection'),carry:avg('carry')||avg('total')||200,
   side:avg('totalSide'),curve:avg('curve')};
 
+// ---------- side view: the real measured flight, reconstructed ----------
+// Arc passes EXACTLY through launch (0,0), apex (xa, apex), landing (carry, 0);
+// end tangents match launchAngle / landingAngle. Geometry may estimate an
+// unmeasured apex for shape — but it is never labeled (apexMeasured guards).
+const D2R=Math.PI/180;
+function sideCurve(s){
+  const carry=(typeof s.carry==='number'&&s.carry>0)?s.carry:
+              ((typeof s.total==='number'&&s.total>0)?s.total:null);
+  const la=(typeof s.launchAngle==='number'&&s.launchAngle>0)?s.launchAngle:null;
+  if(carry===null||la===null) return null;
+  const da=(typeof s.landingAngle==='number'&&s.landingAngle>0)?s.landingAngle:la;
+  const tl=Math.tan(la*D2R), td=Math.tan(da*D2R);
+  let xa=carry*td/(tl+td);                       // where the tangents cross
+  xa=Math.min(0.75*carry,Math.max(0.4*carry,xa)); // real flights peak past mid
+  const apexMeasured=(typeof s.maxHeight==='number'&&s.maxHeight>0);
+  const apex=apexMeasured?s.maxHeight:xa*tl*0.5;  // estimate: geometry only
+  const total=(typeof s.total==='number'&&s.total>carry)?s.total:null;
+  return {carry,total,xa,apex,apexMeasured,tl,td};
+}
+function cubicPt(p0,c1,c2,p1,u){const v=1-u;return{
+  x:v*v*v*p0.x+3*v*v*u*c1.x+3*v*u*u*c2.x+u*u*u*p1.x,
+  y:v*v*v*p0.y+3*v*v*u*c1.y+3*v*u*u*c2.y+u*u*u*p1.y};}
+function sidePoint(f,t){
+  const frac=f.xa/f.carry;
+  if(t<=frac){const u=frac?t/frac:0;
+    return cubicPt({x:0,y:0},{x:0.4*f.xa,y:0.4*f.xa*f.tl},
+                   {x:0.65*f.xa,y:f.apex},{x:f.xa,y:f.apex},u);}
+  const w2=f.carry-f.xa, u=(t-frac)/(1-frac);
+  return cubicPt({x:f.xa,y:f.apex},{x:f.xa+0.35*w2,y:f.apex},
+                 {x:f.carry-0.4*w2,y:0.4*w2*f.td},{x:f.carry,y:0},u);
+}
+const sideFlights=shots.map(sideCurve).filter(Boolean);
+function meanOf(k,pos){const vs=shots.map(s=>s[k])
+  .filter(v=>typeof v==='number'&&(!pos||v>0));
+  return vs.length?vs.reduce((a,b)=>a+b,0)/vs.length:null;}
+const repSide=sideCurve({carry:meanOf('carry',true)??meanOf('total',true),
+  total:meanOf('total',true),launchAngle:meanOf('launchAngle',true),
+  maxHeight:meanOf('maxHeight',true),landingAngle:meanOf('landingAngle',true)});
+function drawSide(t){
+  const card=$('#sideCard');
+  if(!sideFlights.length){card.style.display='none';return;}
+  const c=$('#side'); const {ctx,w,h}=fit(c); ctx.clearRect(0,0,w,h);
+  const maxX=Math.max(...sideFlights.map(f=>f.total||f.carry),1)*1.05;
+  const maxY=Math.max(...sideFlights.map(f=>f.apex),1)*1.35;
+  const padL=38,padR=14,padT=14,gY=h-26;
+  const px=x=>padL+x/maxX*(w-padL-padR);
+  const py=y=>gY-y/maxY*(gY-padT);
+  ctx.font="11px sans-serif";
+  const stepX=Math.ceil(maxX/6/10)*10;
+  for(let d=0;d<=maxX;d+=stepX){ctx.strokeStyle="#16213a";ctx.beginPath();
+    ctx.moveTo(px(d),gY);ctx.lineTo(px(d),padT);ctx.stroke();
+    ctx.fillStyle="#5b6a85";ctx.fillText(d+"m",px(d)+2,gY+14);}
+  const stepY=Math.max(5,Math.ceil(maxY/4/5)*5);
+  for(let y=stepY;y<=maxY;y+=stepY){ctx.strokeStyle="#141f36";ctx.beginPath();
+    ctx.moveTo(padL,py(y));ctx.lineTo(w-padR,py(y));ctx.stroke();
+    ctx.fillStyle="#5b6a85";ctx.fillText(y+"m",4,py(y)+4);}
+  ctx.strokeStyle="#3a4a66";ctx.beginPath();
+  ctx.moveTo(padL,gY);ctx.lineTo(w-padR,gY);ctx.stroke();
+  sideFlights.forEach(f=>{ctx.strokeStyle="rgba(78,161,255,.22)";ctx.lineWidth=1.5;
+    ctx.beginPath();for(let u=0;u<=1.001;u+=0.02){const p=sidePoint(f,u);
+      u===0?ctx.moveTo(px(p.x),py(p.y)):ctx.lineTo(px(p.x),py(p.y));}ctx.stroke();
+    if(f.total){ctx.setLineDash([3,4]);ctx.strokeStyle="rgba(255,209,102,.5)";
+      ctx.beginPath();ctx.moveTo(px(f.carry),gY);ctx.lineTo(px(f.total),gY);
+      ctx.stroke();ctx.setLineDash([]);}});
+  if(!repSide) return;
+  ctx.strokeStyle="#4ea1ff";ctx.lineWidth=3;ctx.beginPath();
+  for(let u=0;u<=t;u+=0.02){const p=sidePoint(repSide,u);
+    u===0?ctx.moveTo(px(p.x),py(p.y)):ctx.lineTo(px(p.x),py(p.y));}
+  ctx.stroke();
+  const b=sidePoint(repSide,t);
+  ctx.fillStyle="#fff";ctx.beginPath();ctx.arc(px(b.x),py(b.y),5,0,7);ctx.fill();
+  if(repSide.apexMeasured&&t>=0.5){ctx.fillStyle="#ffd166";
+    ctx.fillText(repSide.apex.toFixed(0)+" m",px(repSide.xa)+4,py(repSide.apex)-6);}
+}
+function sideCaption(){
+  const cap=$('#sideWhy'); if(!sideFlights.length){cap.textContent="";return;}
+  const parts=[];
+  const la=meanOf('launchAngle',true), mh=meanOf('maxHeight',true),
+        da=meanOf('landingAngle',true);
+  if(la!=null)parts.push(`launches at ${la.toFixed(1)}°`);
+  if(mh!=null)parts.push(`peaks at ${mh.toFixed(0)} m`);
+  if(da!=null)parts.push(`lands at ${da.toFixed(0)}°`);
+  if(hangMean!=null)parts.push(`${hangMean.toFixed(1)} s in the air`);
+  cap.textContent=parts.length?`Average flight ${parts.join(' · ')}.`:"";
+}
+// ---------- shared flight clock (all panels animate in sync) ----------
+const hangVals=shots.map(s=>s.hangTime).filter(v=>typeof v==='number'&&v>0);
+const hangMean=hangVals.length?hangVals.reduce((a,b)=>a+b,0)/hangVals.length:null;
+const DUR=600*Math.min(7,Math.max(2.5,hangMean==null?4:hangMean)); // ms
+let t0=null,clockT=0,rafId=null;
+function tick(now){ if(t0===null)t0=now;
+  clockT=Math.min(1,(now-t0)/DUR);
+  drawSide(clockT);drawFlight(clockT);drawSwing(clockT);
+  if(clockT<1)rafId=requestAnimationFrame(tick); }
+
 // ---------- ball flight ----------
-let flightT=0, raf1;
-function drawFlight(){
+function drawFlight(t){
   const c=$('#flight'); const {ctx,w,h}=fit(c);
   ctx.clearRect(0,0,w,h);
   const maxCarry=Math.max(120, ...shots.map(s=>(s.carry||s.total||0)))*1.1;
@@ -143,26 +256,29 @@ function drawFlight(){
   // target line
   ctx.strokeStyle="#6b7a93";ctx.setLineDash([6,6]);ctx.beginPath();
   ctx.moveTo(x0,sy(0));ctx.lineTo(x0,sy(maxCarry));ctx.stroke();ctx.setLineDash([]);
-  // landing spots
-  shots.forEach(s=>{const px=sx(s.totalSide||0),py=sy(s.carry||s.total||0);
-    ctx.fillStyle="rgba(255,209,102,.55)";ctx.beginPath();ctx.arc(px,py,3.5,0,7);ctx.fill();});
-  // representative path (animated): bezier from tee to avg landing
-  const p0={x:sx(0),y:sy(0)};
-  const end={x:sx(A.side),y:sy(A.carry)};
-  const launchDx=Math.tan(A.launch*Math.PI/180)*(A.carry*0.55);
-  const ctrl={x:sx(launchDx),y:sy(A.carry*0.5)};   // sx() already handles handedness
-  ctx.strokeStyle="#28406a";ctx.lineWidth=2;ctx.beginPath();
-  for(let t=0;t<=1;t+=0.02){const p=bez(p0,ctrl,end,t); t==0?ctx.moveTo(p.x,p.y):ctx.lineTo(p.x,p.y);}
-  ctx.stroke();
+  // every shot: its own faint curved tracer + landing spot
+  const shotCurve=s=>{const carry=(typeof s.carry==='number'&&s.carry>0)?s.carry:(s.total||0);
+    const side=(typeof s.totalSide==='number')?s.totalSide:0;
+    const launch=(typeof s.launchDirection==='number')?s.launchDirection:0;
+    return {p0:{x:sx(0),y:sy(0)},
+            ctrl:{x:sx(Math.tan(launch*Math.PI/180)*(carry*0.55)),y:sy(carry*0.5)},
+            end:{x:sx(side),y:sy(carry)}};};   // sx() already handles handedness
+  shots.forEach(s=>{const q=shotCurve(s);
+    ctx.strokeStyle="rgba(78,161,255,.22)";ctx.lineWidth=1.5;ctx.beginPath();
+    for(let u=0;u<=1.001;u+=0.02){const p=bez(q.p0,q.ctrl,q.end,u);
+      u===0?ctx.moveTo(p.x,p.y):ctx.lineTo(p.x,p.y);}ctx.stroke();
+    ctx.fillStyle="rgba(255,209,102,.55)";ctx.beginPath();
+    ctx.arc(q.end.x,q.end.y,3.5,0,7);ctx.fill();});
+  // representative shot (field means): the bright animated tracer
+  const {p0,ctrl,end}=shotCurve({carry:A.carry,totalSide:A.side,launchDirection:A.launch});
   // animated ball + trail
   ctx.strokeStyle="#4ea1ff";ctx.lineWidth=3;ctx.beginPath();
-  for(let t=0;t<=flightT;t+=0.02){const p=bez(p0,ctrl,end,t);t==0?ctx.moveTo(p.x,p.y):ctx.lineTo(p.x,p.y);}
+  for(let u=0;u<=t;u+=0.02){const p=bez(p0,ctrl,end,u);u==0?ctx.moveTo(p.x,p.y):ctx.lineTo(p.x,p.y);}
   ctx.stroke();
-  const b=bez(p0,ctrl,end,flightT);
+  const b=bez(p0,ctrl,end,t);
   ctx.fillStyle="#fff";ctx.beginPath();ctx.arc(b.x,b.y,5,0,7);ctx.fill();
   // tee marker
   ctx.fillStyle="#9fb4d4";ctx.beginPath();ctx.arc(p0.x,p0.y,4,0,7);ctx.fill();
-  if(flightT<1){flightT+=0.012;raf1=requestAnimationFrame(drawFlight);}
 }
 const sideTxt = Math.abs(A.side)<3?"roughly straight":
   ((A.side>0)===RH?`${Math.abs(A.side).toFixed(0)} m right`:`${Math.abs(A.side).toFixed(0)} m left`);
@@ -172,8 +288,7 @@ $('#flightWhy').innerHTML = `Average shot starts ${A.launch>0===RH?'right':A.lau
 // ---------- swing path ----------
 const sw=DATA.swing||{}; const path=sw.clubPath||0, face=sw.faceAngle||0,
   f2p=(sw.faceToPath!=null)?sw.faceToPath:(face-path);
-let swingT=0, raf2;
-function drawSwing(){
+function drawSwing(t){
   const c=$('#swing'); const {ctx,w,h}=fit(c);
   ctx.clearRect(0,0,w,h);
   const cx=w/2, cy=h*0.62, L=Math.min(w,h)*0.42;
@@ -198,11 +313,11 @@ function drawSwing(){
   ctx.fillStyle="#fff";ctx.beginPath();ctx.arc(cx,cy,7,0,7);ctx.fill();
   // animated clubhead travelling up the actual path
   const a=ang(path)-Math.PI/2;
-  const t=(swingT*2-1); // -1..1
-  const hx=cx+Math.cos(a)*L*t, hy=cy+Math.sin(a)*L*t;
+  const tt=(t*2-1); // -1..1
+  const hx=cx+Math.cos(a)*L*tt, hy=cy+Math.sin(a)*L*tt;
   ctx.fillStyle="#ff9aa2";ctx.beginPath();ctx.arc(hx,hy,6,0,7);ctx.fill();
   // face line at impact (rotate by faceAngle)
-  if(swingT>0.5){
+  if(t>0.5){
     const fa=ang(face); const fl=L*0.5;
     ctx.strokeStyle="#ffd166";ctx.lineWidth=4;ctx.beginPath();
     ctx.moveTo(cx-Math.cos(fa)*fl, cy-Math.sin(fa)*fl);
@@ -217,9 +332,8 @@ function drawSwing(){
   ctx.fillStyle="#ff9aa2";ctx.fillText(`path ${path>=0?'+':''}${path.toFixed(1)}°`, ahx+8, ahy+4);
   const ga=ang(1.0)-Math.PI/2;
   ctx.fillStyle="#5fd0a0";ctx.fillText("ideal", cx+Math.cos(ga)*L+8, cy+Math.sin(ga)*L+14);
-  if(swingT>0.5){ctx.fillStyle="#ffd166";
+  if(t>0.5){ctx.fillStyle="#ffd166";
     ctx.fillText(`face ${face>=0?'+':''}${face.toFixed(1)}°`, cx+L*0.5+8, cy-6);}
-  if(swingT<1){swingT+=0.012;raf2=requestAnimationFrame(drawSwing);}
 }
 const dir = path<0 ? (RH?"out-to-in (over the top)":"in-to-out") : (RH?"in-to-out":"out-to-in");
 const startSide = path<0?(RH?"left":"right"):(RH?"right":"left");
@@ -260,20 +374,35 @@ function renderBars(){
     div.appendChild(track);
     host.appendChild(div);
   });
-  const plan=$('#plan');plan.textContent="";
-  (DATA.blocks||[]).forEach(b=>{const li=document.createElement('li');
-    li.appendChild(el('b',null,b.name||''));
-    li.appendChild(document.createTextNode(' — '+(b.detail||b.goal||'')+' '));
-    const href=safeHref(b.link);
-    if(href){const a=el('a',null,'video ↗'); a.href=href; a.target='_blank';
-      a.rel='noopener noreferrer'; li.appendChild(a);}
-    plan.appendChild(li);});
 }
 
-function replay(){cancelAnimationFrame(raf1);cancelAnimationFrame(raf2);
-  flightT=0;swingT=0;drawFlight();drawSwing();}
-renderBars();drawFlight();drawSwing();
-window.addEventListener('resize',()=>{drawFlight();drawSwing();});
+// ---------- fix it: drills grouped by where, multiple links each ----------
+function renderBlocks(){
+  const host=$('#fixit'); host.textContent="";
+  [["range","At the range"],["home","At home — no ball"]].forEach(([key,label])=>{
+    const items=(DATA.blocks||[]).filter(b=>(b.where||"range")===key);
+    if(!items.length) return;
+    host.appendChild(el('h3','fixhead',label));
+    const ul=el('ul','fixlist');
+    items.forEach(b=>{const li=el('li');
+      li.appendChild(el('b',null,b.name||''));
+      li.appendChild(document.createTextNode(' — '+(b.detail||b.goal||'')+' '));
+      const links=Array.isArray(b.links)?b.links
+        :(b.link?[{label:'video',url:b.link}]:[]);
+      let shown=0;
+      links.forEach(L=>{const href=safeHref(L&&L.url); if(!href) return;
+        if(shown++) li.appendChild(document.createTextNode(' · '));
+        const a=el('a',null,(L.label||'video')+' ↗');
+        a.href=href; a.target='_blank'; a.rel='noopener noreferrer';
+        li.appendChild(a);});
+      ul.appendChild(li);});
+    host.appendChild(ul);});
+}
+
+function replay(){ if(rafId)cancelAnimationFrame(rafId); t0=null;
+  rafId=requestAnimationFrame(tick); }
+renderBars();renderBlocks();sideCaption();replay();
+window.addEventListener('resize',()=>{drawSide(clockT);drawFlight(clockT);drawSwing(clockT);});
 </script></body></html>
 """
 
@@ -296,6 +425,35 @@ def _json_for_script(data: dict) -> str:
     )
 
 
+_VALID_WHERE = ("home", "range")
+
+
+def _validate_blocks(data: dict) -> None:
+    """Fail loudly on malformed practice blocks (repo convention: no silent skips)."""
+    blocks = data.get("blocks")
+    if blocks is None:
+        return
+    if not isinstance(blocks, list):
+        raise ValueError("blocks must be a list")
+    for i, b in enumerate(blocks):
+        if not isinstance(b, dict):
+            raise ValueError(f"blocks[{i}] must be an object")
+        where = b.get("where", "range")
+        if where not in _VALID_WHERE:
+            raise ValueError(
+                f"blocks[{i}].where is {where!r}; expected one of: home, range")
+        links = b.get("links")
+        if links is None:
+            continue
+        if not isinstance(links, list):
+            raise ValueError(f"blocks[{i}].links must be a list of {{label, url}}")
+        for j, link in enumerate(links):
+            if not (isinstance(link, dict) and isinstance(link.get("url"), str)
+                    and isinstance(link.get("label", ""), str)):
+                raise ValueError(
+                    f"blocks[{i}].links[{j}] must be {{label, url}} with a string url")
+
+
 def build_html(data: dict) -> str:
     """Render the visualization HTML, escaping all data against injection.
 
@@ -303,6 +461,7 @@ def build_html(data: dict) -> str:
     body); the rest of `data` is embedded as breakout-safe JSON and rendered
     client-side via textContent (see the template's safe DOM helpers).
     """
+    _validate_blocks(data)
     replacements = {
         "__DATA__": _json_for_script(data),
         "__TITLE__": _html.escape(str(data.get("title", "Trackman Coach"))),
@@ -326,9 +485,15 @@ _DEMO = {
                  "→ ball starts left and curves right.",
     "handedness": "RH",
     "shots": [
-        {"launchDirection": -2, "carry": 200, "totalSide": 25, "curve": 14},
-        {"launchDirection": -3, "carry": 205, "totalSide": 20, "curve": 11},
-        {"launchDirection": -1, "carry": 195, "totalSide": 30, "curve": 18},
+        {"launchDirection": -2, "launchAngle": 11.8, "carry": 200, "total": 226,
+         "totalSide": 25, "curve": 14, "maxHeight": 24, "landingAngle": 36,
+         "hangTime": 5.6},
+        {"launchDirection": -3, "launchAngle": 12.6, "carry": 205, "total": 228,
+         "totalSide": 20, "curve": 11, "maxHeight": 27, "landingAngle": 38,
+         "hangTime": 5.9},
+        {"launchDirection": -1, "launchAngle": 10.9, "carry": 195, "total": 221,
+         "totalSide": 30, "curve": 18, "maxHeight": 22, "landingAngle": 34,
+         "hangTime": 5.4},
     ],
     "swing": {"clubPath": -5.0, "faceAngle": -1.0, "faceToPath": 4.0},
     "targets": [
@@ -337,9 +502,17 @@ _DEMO = {
         {"label": "curve", "value": 14.0, "target": "|x| < 4", "low": -4, "high": 4, "met": False},
     ],
     "blocks": [
-        {"name": "Headcover drill", "detail": "Headcover outside the ball; swing inside it.",
-         "link": "https://hackmotion.com/headcover-drill/"},
-        {"name": "Gate aimed right", "detail": "Sticks pointing right of target; exit to right field."},
+        {"name": "Headcover drill", "where": "range",
+         "detail": "Headcover outside the ball; swing inside it.",
+         "links": [
+             {"label": "video", "url": "https://hackmotion.com/headcover-drill/"},
+             {"label": "more drills",
+              "url": "https://www.youtube.com/results?search_query=headcover+slice+drill"},
+         ]},
+        {"name": "Gate aimed right", "where": "range",
+         "detail": "Sticks pointing right of target; exit to right field."},
+        {"name": "Wall drill", "where": "home",
+         "detail": "Wall a clubhead off the trail shoulder; slow swings that miss it."},
     ],
 }
 

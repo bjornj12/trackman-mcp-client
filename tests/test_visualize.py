@@ -9,6 +9,8 @@ from __future__ import annotations
 
 import re
 
+import pytest
+
 from trackman_mcp.visualize import build_html
 
 
@@ -71,3 +73,84 @@ def test_demo_data_renders():
     from trackman_mcp import visualize
     html = build_html(visualize._DEMO)
     assert "<canvas" in html
+
+
+def test_unknown_where_is_a_loud_error():
+    with pytest.raises(ValueError, match="where.*'gym'.*home, range"):
+        build_html({"blocks": [{"name": "x", "where": "gym"}]})
+
+
+def test_malformed_links_entry_is_a_loud_error():
+    # a bare string instead of {label, url} must be rejected, not skipped
+    with pytest.raises(ValueError, match=r"blocks\[0\]\.links\[0\]"):
+        build_html({"blocks": [{"name": "x", "links": ["https://y"]}]})
+
+
+def test_links_must_be_a_list():
+    with pytest.raises(ValueError, match=r"blocks\[0\]\.links must be a list"):
+        build_html({"blocks": [{"name": "x", "links": "https://y"}]})
+
+
+def test_valid_blocks_with_links_and_legacy_link_pass():
+    html = build_html({"blocks": [
+        {"name": "a", "where": "home",
+         "links": [{"label": "video", "url": "https://example.com/v"}]},
+        {"name": "b", "link": "https://example.com/w"},   # legacy single link
+    ]})
+    assert html.lstrip().lower().startswith("<!doctype html>")
+
+
+def test_fixit_section_replaces_flat_plan_list():
+    html = build_html({"title": "ok"})
+    assert 'id="fixit"' in html
+    assert 'id="plan"' not in html          # the old flat list is gone
+    assert "renderBlocks" in html
+    # groups render only when they have items (no empty headers)
+    assert "if(!items.length) return" in html
+
+
+def test_hostile_link_label_and_url_cannot_break_out():
+    html = build_html({
+        "title": "ok",
+        "blocks": [{"name": "Drill", "where": "home",
+                    "links": [{"label": "</script><script>alert(1)</script>",
+                               "url": "javascript:alert(1)"}]}],
+    })
+    # embedded JSON stays breakout-safe; only the template's own script closes
+    assert html.count("</script>") == 1
+    assert "<script>alert(1)" not in html
+
+
+def test_side_view_hero_present_with_honest_guards():
+    html = build_html({"shots": [{"carry": 200, "launchAngle": 12,
+                                  "maxHeight": 25, "landingAngle": 35,
+                                  "hangTime": 5.5}]})
+    assert 'id="side"' in html and 'id="sideCard"' in html
+    # reconstruction exists and estimates geometry only when unmeasured
+    assert "sideCurve" in html and "apexMeasured" in html
+    # the apex label renders only behind the measured guard
+    assert "repSide.apexMeasured" in html
+    # panel hides itself when no shot has usable height data
+    assert "card.style.display='none'" in html
+    # the embedded page JSON carries the shots with vertical fields intact
+    assert '"maxHeight": 25' in html and '"hangTime": 5.5' in html
+
+
+def test_animation_duration_scales_with_hangtime():
+    html = build_html({"title": "ok"})
+    # duration = 600ms x clamped hang seconds; default 4 when unmeasured
+    assert "600*Math.min(7,Math.max(2.5" in html
+    # one clock drives all panels in sync
+    assert "drawSide(clockT);drawFlight(clockT);drawSwing(clockT)" in html
+
+
+def test_topdown_draws_every_shot_as_its_own_tracer():
+    html = build_html({"shots": [{"carry": 150, "launchDirection": -2,
+                                  "totalSide": 10},
+                                 {"carry": 160, "launchDirection": 1,
+                                  "totalSide": -5}]})
+    assert "shotCurve" in html
+    # per-shot faint tracer color distinct from the bright animated mean
+    assert "rgba(78,161,255,.22)" in html
+    # tracers go through the handedness-aware sx() mapping (regression guard)
+    assert "(RH? v: -v)" in html

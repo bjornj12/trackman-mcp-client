@@ -33,7 +33,7 @@ async def check(html: str, shot_path: str) -> int:
                 if m.type in ("error", "warning") else None)
         page.on("pageerror", lambda e: errors.append(f"pageerror: {e}"))
         await page.set_content(html, wait_until="load")
-        await page.wait_for_timeout(2500)  # let the animations run
+        await page.wait_for_timeout(4500)  # hangTime-scaled animations: up to 4.2s
         # sanity: canvases drew something (non-zero dimensions)
         dims = await page.evaluate(
             "Array.from(document.querySelectorAll('canvas')).map(c=>[c.width,c.height])"

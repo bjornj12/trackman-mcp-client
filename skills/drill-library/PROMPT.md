@@ -8,6 +8,10 @@ the practice blocks in a coaching plan.
 table has no link for it, run Live search and verify one before giving it. Never
 hand over a drill without a video, and never invent a URL.
 
+Prefer **2–3 verified links per drill** when available — the Fix-it section
+renders them all. Every drill carries a `where` value (`range` or `home`); the
+whole at-home table below is `home`.
+
 ## How to use
 
 1. Identify the weakness category from the diagnosis (below).
@@ -47,22 +51,22 @@ faster). Each maps to a specific fault — pick by the diagnosis.
 - **Want start-line feedback without a ball?** Swing at a dandelion head or a tee
   in the grass — direction feedback, zero pressure.
 
-These are **best shown animated, one drill at a time** (red current move → green
-target move) — see the `trackman-visualizer` prompt.
+Hand these to the coach as `where: "home"` blocks (with links) so they appear in
+the Fix-it section of the trajectory page — see the `trackman-visualizer` prompt.
 
 ## Curated library
 
 > Verify a link still resolves before handing it over. Each entry:
 > weakness → drill → what to do → link.
 
-| Category | Drill | What to do | Video |
-|----------|-------|-----------|-------|
-| `wedge-distance-control` | Clock / ladder wedges | 3 carry numbers (e.g. 50/70/90 m), 5 balls each, log carry on Trackman; aim ±5 m | _find via Live search_ |
-| `dispersion-irons` | Gate / alignment-stick window | Sticks as a start-line gate; 7-iron must start every ball through the gate | _find via Live search_ |
-| `strike-low-point` | Towel / line drill | Strike a line so the divot starts after the ball; check smash factor | _find via Live search_ |
-| `driver-launch` | Tee height + AoA ladder | Adjust tee height/ball position to raise launch & cut spin; target an efficient launch/spin window | _find via Live search_ |
-| `gapping` | Build-your-yardages session | Hit each club 5×, record avg carry, find overlaps/holes; pick one club to re-loft or swap | _find via Live search_ |
-| `putting-speed` | Ladder lag drill | Putt to 6/9/12 m, finish within a 1 m zone past the hole; speed over line | _find via Live search_ |
+| Category | Drill | Where | What to do | Video |
+|----------|-------|-------|-----------|-------|
+| `wedge-distance-control` | Clock / ladder wedges | range | 3 carry numbers (e.g. 50/70/90 m), 5 balls each, log carry on Trackman; aim ±5 m | _find via Live search_ |
+| `dispersion-irons` | Gate / alignment-stick window | range | Sticks as a start-line gate; 7-iron must start every ball through the gate | _find via Live search_ |
+| `strike-low-point` | Towel / line drill | range | Strike a line so the divot starts after the ball; check smash factor | _find via Live search_ |
+| `driver-launch` | Tee height + AoA ladder | range | Adjust tee height/ball position to raise launch & cut spin; target an efficient launch/spin window | _find via Live search_ |
+| `gapping` | Build-your-yardages session | range | Hit each club 5×, record avg carry, find overlaps/holes; pick one club to re-loft or swap | _find via Live search_ |
+| `putting-speed` | Ladder lag drill | range | Putt to 6/9/12 m, finish within a 1 m zone past the hole; speed over line | _find via Live search_ |
 
 **Never invent YouTube URLs.** If you don't have a verified link, use Live search.
 

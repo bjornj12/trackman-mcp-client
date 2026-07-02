@@ -1,71 +1,74 @@
 # Trackman Visualizer
 
-Turn a coaching diagnosis into a **self-contained animated HTML artifact**: the
-ball-flight curve, an animated swing path showing *why* the ball curves, and
-progress bars vs the plan's targets. Use real shot data — never invent shapes.
-This is a presentation layer; it adds no new diagnosis.
+Turn a coaching diagnosis into a **self-contained animated HTML artifact** that
+animates the golfer's **real measured flight**: side-view height profile
+(launch → apex → landing → roll), top-down shape with every shot's tracer, the
+swing path explaining *why* it curves, progress vs targets, and a **Fix it**
+section linking drills for range and home. Real shot data only — never invent
+shapes or URLs. This is a presentation layer; it adds no new diagnosis.
 
-**Lead with it — don't wait to be asked.** Any time you diagnose a fault, show a
-shot pattern, or prescribe drills, produce a visual. Many golfers (especially
-self-described visual learners, or anyone who says "I don't get it") only grasp
-the fault when they *see it move*. Two modes:
-
-- **Shot pattern + swing path + targets** — the standard `build_visualization`
-  artifact below. Great for "here's your slice and why."
-- **One drill at a time** — if a drill isn't clicking, animate that single
-  drill's intended motion: the red current move (e.g. out-to-in, face open) vs
-  the green target move. Show them **one per exercise**, not all at once — that's
-  what makes mechanics land. Use `build_visualization` with the drill's target
-  `swing` + a one-line `diagnosis`, or the client's own HTML/SVG artifact
-  capability for a richer per-drill animation. Offer to slow it down or change
-  the camera (top-down vs face-on vs side) if it still isn't clear.
+**Lead with it — don't wait to be asked.** Any time you diagnose a fault, show
+a shot pattern, or prescribe drills, build this page. One artifact carries the
+whole story: what the ball is actually doing, why, and the exercises that fix
+it.
 
 ## Gather the inputs (reuse what the coach already pulled, or fetch via the MCP)
 
-1. **Shot shape** — driver (or target club) measurements from the relevant
-   session: `launchDirection`, `carry` (or `total`), `totalSide`, `curve`. Get
-   them from `get_session`, filtered to the club. Several shots → a dispersion
-   cloud; one → a single tracer.
-2. **Swing** — `clubPath`, `faceAngle`, `faceToPath` (mean over those shots).
-3. **Targets** — from the saved plan
-   (`training_plan(action="next")` / `training_plan(action="list")`) and/or
+1. **Shots** — per-shot measurements for the club under discussion, from
+   `get_session`: `launchDirection`, `launchAngle`, `carry`, `total`,
+   `totalSide`, `curve`, `maxHeight`, `landingAngle`, `hangTime`. Pass every
+   shot — the page animates the average and draws the rest faint. Missing
+   fields are fine; the page only labels what was measured.
+2. **Swing** — `clubPath`, `faceAngle`, `faceToPath` (mean over those shots),
+   where the session kind captures them.
+3. **Targets** — from the saved plan (`training_plan(action="next")` /
+   `training_plan(action="list")`) and/or
    `training_plan(action="verify", plan_id=<id>)`: each as
    `{label, value, target, low, high, met}`.
-4. **Handedness** — from `get_profile` (`profile.dexterity`); it sets which way
-   "right" is.
+4. **Blocks** — the prescribed drills, each tagged `where: "range"` or
+   `where: "home"`, each with 1–3 **verified** links
+   (`links: [{label, url}]`) from the `drill-library` prompt or live search.
+5. **Handedness** — from `get_profile` (`profile.dexterity`).
 
 ## Build it
 
-Assemble the data dict (shape below) and call `build_visualization(data)` → it
-returns `{html}`, one standalone document (inline canvas/JS, no network).
+Assemble the data dict and call `build_visualization(data)` → returns `{html}`,
+one standalone document (inline canvas/JS, no network).
 
 ```
 {
   "title": "...", "subtitle": "...", "diagnosis": "<one line>",
   "handedness": "RH" | "LH",
-  "shots": [{"launchDirection": deg, "carry": m, "totalSide": m, "curve": m}],
+  "shots": [{"launchDirection": deg, "launchAngle": deg, "carry": m,
+             "total": m, "totalSide": m, "curve": m, "maxHeight": m,
+             "landingAngle": deg, "hangTime": s}],
   "swing": {"clubPath": deg, "faceAngle": deg, "faceToPath": deg},
   "targets": [{"label","value","target","low","high","met"}],
-  "blocks": [{"name","detail","goal","link"}]
+  "blocks": [{"name","detail","goal","where":"range"|"home",
+              "links":[{"label","url"}]}]
 }
 ```
 
 ## Present it
 
-Emit the returned `html` as a **`text/html` artifact** — it's fully
-self-contained, so it renders directly in the artifact panel. Then narrate in one
-or two lines what the visual shows (e.g. "red line = your out-to-in path; green =
-ideal — the ball starts left and curves right").
+Emit the returned `html` as a **`text/html` artifact** — it renders directly in
+the artifact panel. Narrate in one or two lines what the visual shows (e.g.
+"side view: you launch at 9° and peak at 18 m — low for driver; top-down: every
+shot bends right"), then point at the Fix it section: range drills for the next
+session, home drills for today.
 
 ## What it renders
 
-- **Ball flight** (top-down): animated tracer of the average shot, all landing
-  spots as a dispersion cloud, target line, and a plain-language caption.
-- **Swing path**: animated clubhead along your actual path (red) vs ideal
-  (green), the face at impact (yellow), and a caption tying path + face-to-path
-  to the curve.
-- **Targets**: bars with the good zone shaded and your value marked, met/not-yet
-  pills, plus the plan's drills with links, and a replay button.
+- **Flight — side view** (hero): every measured arc faint, the average animated,
+  apex label only when `maxHeight` was measured, dotted roll after carry, and a
+  launch/peak/landing/hang caption.
+- **Ball flight — top-down**: per-shot curved tracers + landing spots, the
+  average animated, target line, caption.
+- **Swing path**: animated clubhead on the actual path (red) vs ideal (green),
+  face at impact (yellow), caption tying path + face-to-path to the curve.
+- **Targets**: bars with the good zone shaded, met/not-yet pills, replay.
+- **Fix it — drills**: "At the range" and "At home — no ball" groups, each
+  drill with its links.
 
-Only plot metrics that exist in the data — if a field is missing, the viz adapts
-(single straight shot, no swing panel, etc.) rather than faking it.
+Only plot metrics that exist in the data — if a field is missing, the viz
+adapts (panel hides, label drops) rather than faking it.
