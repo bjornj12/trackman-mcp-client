@@ -250,17 +250,21 @@ function drawFlight(t){
   // target line
   ctx.strokeStyle="#6b7a93";ctx.setLineDash([6,6]);ctx.beginPath();
   ctx.moveTo(x0,sy(0));ctx.lineTo(x0,sy(maxCarry));ctx.stroke();ctx.setLineDash([]);
-  // landing spots
-  shots.forEach(s=>{const px=sx(s.totalSide||0),py=sy(s.carry||s.total||0);
-    ctx.fillStyle="rgba(255,209,102,.55)";ctx.beginPath();ctx.arc(px,py,3.5,0,7);ctx.fill();});
-  // representative path (animated): bezier from tee to avg landing
-  const p0={x:sx(0),y:sy(0)};
-  const end={x:sx(A.side),y:sy(A.carry)};
-  const launchDx=Math.tan(A.launch*Math.PI/180)*(A.carry*0.55);
-  const ctrl={x:sx(launchDx),y:sy(A.carry*0.5)};   // sx() already handles handedness
-  ctx.strokeStyle="#28406a";ctx.lineWidth=2;ctx.beginPath();
-  for(let t=0;t<=1;t+=0.02){const p=bez(p0,ctrl,end,t); t==0?ctx.moveTo(p.x,p.y):ctx.lineTo(p.x,p.y);}
-  ctx.stroke();
+  // every shot: its own faint curved tracer + landing spot
+  const shotCurve=s=>{const carry=(typeof s.carry==='number'&&s.carry>0)?s.carry:(s.total||0);
+    const side=(typeof s.totalSide==='number')?s.totalSide:0;
+    const launch=(typeof s.launchDirection==='number')?s.launchDirection:0;
+    return {p0:{x:sx(0),y:sy(0)},
+            ctrl:{x:sx(Math.tan(launch*Math.PI/180)*(carry*0.55)),y:sy(carry*0.5)},
+            end:{x:sx(side),y:sy(carry)}};};   // sx() already handles handedness
+  shots.forEach(s=>{const q=shotCurve(s);
+    ctx.strokeStyle="rgba(78,161,255,.22)";ctx.lineWidth=1.5;ctx.beginPath();
+    for(let u=0;u<=1.001;u+=0.02){const p=bez(q.p0,q.ctrl,q.end,u);
+      u===0?ctx.moveTo(p.x,p.y):ctx.lineTo(p.x,p.y);}ctx.stroke();
+    ctx.fillStyle="rgba(255,209,102,.55)";ctx.beginPath();
+    ctx.arc(q.end.x,q.end.y,3.5,0,7);ctx.fill();});
+  // representative shot (field means): the bright animated tracer
+  const {p0,ctrl,end}=shotCurve({carry:A.carry,totalSide:A.side,launchDirection:A.launch});
   // animated ball + trail
   ctx.strokeStyle="#4ea1ff";ctx.lineWidth=3;ctx.beginPath();
   for(let u=0;u<=t;u+=0.02){const p=bez(p0,ctrl,end,u);u==0?ctx.moveTo(p.x,p.y):ctx.lineTo(p.x,p.y);}

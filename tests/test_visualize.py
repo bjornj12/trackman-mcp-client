@@ -142,3 +142,15 @@ def test_animation_duration_scales_with_hangtime():
     assert "600*Math.min(7,Math.max(2.5" in html
     # one clock drives all panels in sync
     assert "drawSide(clockT);drawFlight(clockT);drawSwing(clockT)" in html
+
+
+def test_topdown_draws_every_shot_as_its_own_tracer():
+    html = build_html({"shots": [{"carry": 150, "launchDirection": -2,
+                                  "totalSide": 10},
+                                 {"carry": 160, "launchDirection": 1,
+                                  "totalSide": -5}]})
+    assert "shotCurve" in html
+    # per-shot faint tracer color distinct from the bright animated mean
+    assert "rgba(78,161,255,.22)" in html
+    # tracers go through the handedness-aware sx() mapping (regression guard)
+    assert "(RH? v: -v)" in html
