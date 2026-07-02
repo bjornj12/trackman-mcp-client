@@ -119,3 +119,26 @@ def test_hostile_link_label_and_url_cannot_break_out():
     # embedded JSON stays breakout-safe; only the template's own script closes
     assert html.count("</script>") == 1
     assert "<script>alert(1)" not in html
+
+
+def test_side_view_hero_present_with_honest_guards():
+    html = build_html({"shots": [{"carry": 200, "launchAngle": 12,
+                                  "maxHeight": 25, "landingAngle": 35,
+                                  "hangTime": 5.5}]})
+    assert 'id="side"' in html and 'id="sideCard"' in html
+    # reconstruction exists and estimates geometry only when unmeasured
+    assert "sideCurve" in html and "apexMeasured" in html
+    # the apex label renders only behind the measured guard
+    assert "repSide.apexMeasured" in html
+    # panel hides itself when no shot has usable height data
+    assert "card.style.display='none'" in html
+    # the embedded page JSON carries the shots with vertical fields intact
+    assert '"maxHeight": 25' in html and '"hangTime": 5.5' in html
+
+
+def test_animation_duration_scales_with_hangtime():
+    html = build_html({"title": "ok"})
+    # duration = 600ms x clamped hang seconds; default 4 when unmeasured
+    assert "600*Math.min(7,Math.max(2.5" in html
+    # one clock drives all panels in sync
+    assert "drawSide(clockT);drawFlight(clockT);drawSwing(clockT)" in html

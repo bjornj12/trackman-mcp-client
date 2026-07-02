@@ -50,6 +50,7 @@ _TEMPLATE = r"""<!doctype html>
   .grid{display:grid;grid-template-columns:1fr 1fr;gap:18px}
   @media(max-width:840px){.grid{grid-template-columns:1fr}}
   .card{background:var(--panel);border-radius:12px;padding:16px}
+  .hero{margin:0 0 18px}
   .card h2{font-size:15px;margin:0 0 10px;color:#bcd2f0;letter-spacing:.3px;text-transform:uppercase}
   canvas{width:100%;height:auto;display:block;background:#0e1626;border-radius:8px}
   .legend{display:flex;gap:14px;flex-wrap:wrap;color:var(--mut);font-size:12px;margin-top:8px}
@@ -73,6 +74,15 @@ _TEMPLATE = r"""<!doctype html>
 <body><div class="wrap">
   <h1>__TITLE__</h1><p class="sub">__SUBTITLE__</p>
   <div class="diag">__DIAGNOSIS__</div>
+  <div class="card hero" id="sideCard"><h2>Ball flight — side view</h2>
+    <canvas id="side" width="1040" height="330"></canvas>
+    <div class="legend">
+      <span><i class="dot" style="background:#4ea1ff"></i>average flight</span>
+      <span><i class="dot" style="background:rgba(78,161,255,.4)"></i>each shot</span>
+      <span><i class="dot" style="background:#ffd166"></i>roll after carry</span>
+    </div>
+    <div class="why" id="sideWhy"></div>
+  </div>
   <div class="grid">
     <div class="card"><h2>Ball flight</h2>
       <canvas id="flight" width="500" height="520"></canvas>
@@ -127,9 +137,103 @@ const avg=k=>shots.reduce((a,s)=>a+(typeof s[k]==='number'?s[k]:0),0)/shots.leng
 const A={launch:avg('launchDirection'),carry:avg('carry')||avg('total')||200,
   side:avg('totalSide'),curve:avg('curve')};
 
+// ---------- side view: the real measured flight, reconstructed ----------
+// Arc passes EXACTLY through launch (0,0), apex (xa, apex), landing (carry, 0);
+// end tangents match launchAngle / landingAngle. Geometry may estimate an
+// unmeasured apex for shape — but it is never labeled (apexMeasured guards).
+const D2R=Math.PI/180;
+function sideCurve(s){
+  const carry=(typeof s.carry==='number'&&s.carry>0)?s.carry:
+              ((typeof s.total==='number'&&s.total>0)?s.total:null);
+  const la=(typeof s.launchAngle==='number'&&s.launchAngle>0)?s.launchAngle:null;
+  if(carry===null||la===null) return null;
+  const da=(typeof s.landingAngle==='number'&&s.landingAngle>0)?s.landingAngle:la;
+  const tl=Math.tan(la*D2R), td=Math.tan(da*D2R);
+  let xa=carry*td/(tl+td);                       // where the tangents cross
+  xa=Math.min(0.75*carry,Math.max(0.4*carry,xa)); // real flights peak past mid
+  const apexMeasured=(typeof s.maxHeight==='number'&&s.maxHeight>0);
+  const apex=apexMeasured?s.maxHeight:xa*tl*0.5;  // estimate: geometry only
+  const total=(typeof s.total==='number'&&s.total>carry)?s.total:null;
+  return {carry,total,xa,apex,apexMeasured,tl,td};
+}
+function cubicPt(p0,c1,c2,p1,u){const v=1-u;return{
+  x:v*v*v*p0.x+3*v*v*u*c1.x+3*v*u*u*c2.x+u*u*u*p1.x,
+  y:v*v*v*p0.y+3*v*v*u*c1.y+3*v*u*u*c2.y+u*u*u*p1.y};}
+function sidePoint(f,t){
+  const frac=f.xa/f.carry;
+  if(t<=frac){const u=frac?t/frac:0;
+    return cubicPt({x:0,y:0},{x:0.4*f.xa,y:0.4*f.xa*f.tl},
+                   {x:0.65*f.xa,y:f.apex},{x:f.xa,y:f.apex},u);}
+  const w2=f.carry-f.xa, u=(t-frac)/(1-frac);
+  return cubicPt({x:f.xa,y:f.apex},{x:f.xa+0.35*w2,y:f.apex},
+                 {x:f.carry-0.4*w2,y:0.4*w2*f.td},{x:f.carry,y:0},u);
+}
+const sideFlights=shots.map(sideCurve).filter(Boolean);
+function meanOf(k,pos){const vs=shots.map(s=>s[k])
+  .filter(v=>typeof v==='number'&&(!pos||v>0));
+  return vs.length?vs.reduce((a,b)=>a+b,0)/vs.length:null;}
+const repSide=sideCurve({carry:meanOf('carry',true)??meanOf('total',true),
+  total:meanOf('total',true),launchAngle:meanOf('launchAngle',true),
+  maxHeight:meanOf('maxHeight',true),landingAngle:meanOf('landingAngle',true)});
+function drawSide(t){
+  const card=$('#sideCard');
+  if(!sideFlights.length){card.style.display='none';return;}
+  const c=$('#side'); const {ctx,w,h}=fit(c); ctx.clearRect(0,0,w,h);
+  const maxX=Math.max(...sideFlights.map(f=>f.total||f.carry),1)*1.05;
+  const maxY=Math.max(...sideFlights.map(f=>f.apex),1)*1.35;
+  const padL=38,padR=14,padT=14,gY=h-26;
+  const px=x=>padL+x/maxX*(w-padL-padR);
+  const py=y=>gY-y/maxY*(gY-padT);
+  ctx.font="11px sans-serif";
+  const stepX=Math.ceil(maxX/6/10)*10;
+  for(let d=0;d<=maxX;d+=stepX){ctx.strokeStyle="#16213a";ctx.beginPath();
+    ctx.moveTo(px(d),gY);ctx.lineTo(px(d),padT);ctx.stroke();
+    ctx.fillStyle="#5b6a85";ctx.fillText(d+"m",px(d)+2,gY+14);}
+  const stepY=Math.max(5,Math.ceil(maxY/4/5)*5);
+  for(let y=stepY;y<=maxY;y+=stepY){ctx.strokeStyle="#141f36";ctx.beginPath();
+    ctx.moveTo(padL,py(y));ctx.lineTo(w-padR,py(y));ctx.stroke();
+    ctx.fillStyle="#5b6a85";ctx.fillText(y+"m",4,py(y)+4);}
+  ctx.strokeStyle="#3a4a66";ctx.beginPath();
+  ctx.moveTo(padL,gY);ctx.lineTo(w-padR,gY);ctx.stroke();
+  sideFlights.forEach(f=>{ctx.strokeStyle="rgba(78,161,255,.22)";ctx.lineWidth=1.5;
+    ctx.beginPath();for(let u=0;u<=1.001;u+=0.02){const p=sidePoint(f,u);
+      u===0?ctx.moveTo(px(p.x),py(p.y)):ctx.lineTo(px(p.x),py(p.y));}ctx.stroke();
+    if(f.total){ctx.setLineDash([3,4]);ctx.strokeStyle="rgba(255,209,102,.5)";
+      ctx.beginPath();ctx.moveTo(px(f.carry),gY);ctx.lineTo(px(f.total),gY);
+      ctx.stroke();ctx.setLineDash([]);}});
+  if(!repSide) return;
+  ctx.strokeStyle="#4ea1ff";ctx.lineWidth=3;ctx.beginPath();
+  for(let u=0;u<=t;u+=0.02){const p=sidePoint(repSide,u);
+    u===0?ctx.moveTo(px(p.x),py(p.y)):ctx.lineTo(px(p.x),py(p.y));}
+  ctx.stroke();
+  const b=sidePoint(repSide,t);
+  ctx.fillStyle="#fff";ctx.beginPath();ctx.arc(px(b.x),py(b.y),5,0,7);ctx.fill();
+  if(repSide.apexMeasured&&t>=0.5){ctx.fillStyle="#ffd166";
+    ctx.fillText(repSide.apex.toFixed(0)+" m",px(repSide.xa)+4,py(repSide.apex)-6);}
+}
+function sideCaption(){
+  const cap=$('#sideWhy'); if(!sideFlights.length){cap.textContent="";return;}
+  const parts=[];
+  const la=meanOf('launchAngle',true), mh=meanOf('maxHeight',true),
+        da=meanOf('landingAngle',true);
+  if(la!=null)parts.push(`launches at ${la.toFixed(1)}°`);
+  if(mh!=null)parts.push(`peaks at ${mh.toFixed(0)} m`);
+  if(da!=null)parts.push(`lands at ${da.toFixed(0)}°`);
+  if(hangMean!=null)parts.push(`${hangMean.toFixed(1)} s in the air`);
+  cap.textContent=parts.length?`Average flight ${parts.join(' · ')}.`:"";
+}
+// ---------- shared flight clock (all panels animate in sync) ----------
+const hangVals=shots.map(s=>s.hangTime).filter(v=>typeof v==='number'&&v>0);
+const hangMean=hangVals.length?hangVals.reduce((a,b)=>a+b,0)/hangVals.length:null;
+const DUR=600*Math.min(7,Math.max(2.5,hangMean==null?4:hangMean)); // ms
+let t0=null,clockT=0,rafId=null;
+function tick(now){ if(t0===null)t0=now;
+  clockT=Math.min(1,(now-t0)/DUR);
+  drawSide(clockT);drawFlight(clockT);drawSwing(clockT);
+  if(clockT<1)rafId=requestAnimationFrame(tick); }
+
 // ---------- ball flight ----------
-let flightT=0, raf1;
-function drawFlight(){
+function drawFlight(t){
   const c=$('#flight'); const {ctx,w,h}=fit(c);
   ctx.clearRect(0,0,w,h);
   const maxCarry=Math.max(120, ...shots.map(s=>(s.carry||s.total||0)))*1.1;
@@ -159,13 +263,12 @@ function drawFlight(){
   ctx.stroke();
   // animated ball + trail
   ctx.strokeStyle="#4ea1ff";ctx.lineWidth=3;ctx.beginPath();
-  for(let t=0;t<=flightT;t+=0.02){const p=bez(p0,ctrl,end,t);t==0?ctx.moveTo(p.x,p.y):ctx.lineTo(p.x,p.y);}
+  for(let u=0;u<=t;u+=0.02){const p=bez(p0,ctrl,end,u);u==0?ctx.moveTo(p.x,p.y):ctx.lineTo(p.x,p.y);}
   ctx.stroke();
-  const b=bez(p0,ctrl,end,flightT);
+  const b=bez(p0,ctrl,end,t);
   ctx.fillStyle="#fff";ctx.beginPath();ctx.arc(b.x,b.y,5,0,7);ctx.fill();
   // tee marker
   ctx.fillStyle="#9fb4d4";ctx.beginPath();ctx.arc(p0.x,p0.y,4,0,7);ctx.fill();
-  if(flightT<1){flightT+=0.012;raf1=requestAnimationFrame(drawFlight);}
 }
 const sideTxt = Math.abs(A.side)<3?"roughly straight":
   ((A.side>0)===RH?`${Math.abs(A.side).toFixed(0)} m right`:`${Math.abs(A.side).toFixed(0)} m left`);
@@ -175,8 +278,7 @@ $('#flightWhy').innerHTML = `Average shot starts ${A.launch>0===RH?'right':A.lau
 // ---------- swing path ----------
 const sw=DATA.swing||{}; const path=sw.clubPath||0, face=sw.faceAngle||0,
   f2p=(sw.faceToPath!=null)?sw.faceToPath:(face-path);
-let swingT=0, raf2;
-function drawSwing(){
+function drawSwing(t){
   const c=$('#swing'); const {ctx,w,h}=fit(c);
   ctx.clearRect(0,0,w,h);
   const cx=w/2, cy=h*0.62, L=Math.min(w,h)*0.42;
@@ -201,11 +303,11 @@ function drawSwing(){
   ctx.fillStyle="#fff";ctx.beginPath();ctx.arc(cx,cy,7,0,7);ctx.fill();
   // animated clubhead travelling up the actual path
   const a=ang(path)-Math.PI/2;
-  const t=(swingT*2-1); // -1..1
-  const hx=cx+Math.cos(a)*L*t, hy=cy+Math.sin(a)*L*t;
+  const tt=(t*2-1); // -1..1
+  const hx=cx+Math.cos(a)*L*tt, hy=cy+Math.sin(a)*L*tt;
   ctx.fillStyle="#ff9aa2";ctx.beginPath();ctx.arc(hx,hy,6,0,7);ctx.fill();
   // face line at impact (rotate by faceAngle)
-  if(swingT>0.5){
+  if(t>0.5){
     const fa=ang(face); const fl=L*0.5;
     ctx.strokeStyle="#ffd166";ctx.lineWidth=4;ctx.beginPath();
     ctx.moveTo(cx-Math.cos(fa)*fl, cy-Math.sin(fa)*fl);
@@ -220,9 +322,8 @@ function drawSwing(){
   ctx.fillStyle="#ff9aa2";ctx.fillText(`path ${path>=0?'+':''}${path.toFixed(1)}°`, ahx+8, ahy+4);
   const ga=ang(1.0)-Math.PI/2;
   ctx.fillStyle="#5fd0a0";ctx.fillText("ideal", cx+Math.cos(ga)*L+8, cy+Math.sin(ga)*L+14);
-  if(swingT>0.5){ctx.fillStyle="#ffd166";
+  if(t>0.5){ctx.fillStyle="#ffd166";
     ctx.fillText(`face ${face>=0?'+':''}${face.toFixed(1)}°`, cx+L*0.5+8, cy-6);}
-  if(swingT<1){swingT+=0.012;raf2=requestAnimationFrame(drawSwing);}
 }
 const dir = path<0 ? (RH?"out-to-in (over the top)":"in-to-out") : (RH?"in-to-out":"out-to-in");
 const startSide = path<0?(RH?"left":"right"):(RH?"right":"left");
@@ -288,10 +389,10 @@ function renderBlocks(){
     host.appendChild(ul);});
 }
 
-function replay(){cancelAnimationFrame(raf1);cancelAnimationFrame(raf2);
-  flightT=0;swingT=0;drawFlight();drawSwing();}
-renderBars();renderBlocks();drawFlight();drawSwing();
-window.addEventListener('resize',()=>{drawFlight();drawSwing();});
+function replay(){ if(rafId)cancelAnimationFrame(rafId); t0=null;
+  rafId=requestAnimationFrame(tick); }
+renderBars();renderBlocks();sideCaption();replay();
+window.addEventListener('resize',()=>{drawSide(clockT);drawFlight(clockT);drawSwing(clockT);});
 </script></body></html>
 """
 
