@@ -1,6 +1,6 @@
 """Generate a self-contained animated HTML visualization of a coaching diagnosis.
 
-Renders three things from real Trackman data, no external dependencies (pure
+Renders four things from real Trackman data, no external dependencies (pure
 canvas/JS in one HTML file):
   1. Flight side view — the real measured trajectory (launch/apex/landing),
      every shot faint + the average animated, roll after carry.
