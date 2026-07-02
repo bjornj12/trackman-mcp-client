@@ -13,6 +13,11 @@ doesn't have a good match. Used by `golf-coaching` to fill practice blocks.
 the table has no link, live-search and verify one first; never give a drill
 without a video, and never invent a URL.
 
+Prefer **2–3 verified links per drill** when the library or a live search can
+supply them — the Fix-it section renders them all. Every drill also carries a
+`where` value (`range` needs balls/bay; `home` needs neither) so the coach can
+tag its block. The whole at-home table below is `home`.
+
 ## How to use
 
 1. Identify the weakness category from the diagnosis (see categories below).
@@ -46,7 +51,8 @@ diagnosed fault:
 
 Tell the user: go slow and over-correct (neutral will feel like a hook at
 first); daily beats weekly; swing at a dandelion/tee for start-line feedback.
-Best shown animated one drill at a time (see `trackman-visualizer`).
+Hand these to the coach as `where: "home"` blocks (with links) so they appear
+in the Fix-it section of the trajectory page (see `trackman-visualizer`).
 
 ## Curated library
 
@@ -54,14 +60,14 @@ Best shown animated one drill at a time (see `trackman-visualizer`).
 > replace dead links and prune stale ones. Each entry: weakness → drill → what
 > to do → link. Add real, watched-and-verified links as the library grows.
 
-| Category | Drill | What to do | Video |
-|----------|-------|-----------|-------|
-| `wedge-distance-control` | Clock / ladder wedges | 3 carry numbers (e.g. 50/70/90y), 5 balls each, log carry on Trackman; aim ±5y | _TODO: add vetted link_ |
-| `dispersion-irons` | Gate / alignment-stick window | Set sticks as a start-line gate; 7-iron, must start every ball through the gate | _TODO: add vetted link_ |
-| `strike-low-point` | Towel / line drill | Strike a line (or just past a towel) so divot starts after the ball; check smash factor | _TODO: add vetted link_ |
-| `driver-launch` | Tee height + AoA ladder | Adjust tee height/ball position to raise launch & cut spin; target an efficient launch/spin window | _TODO: add vetted link_ |
-| `gapping` | Build-your-yardages session | Hit each club 5x, record avg carry, find overlaps/holes; pick one club to re-loft or swap | _TODO: add vetted link_ |
-| `putting-speed` | Ladder lag drill | Putt to 20/30/40ft, finish within a 3ft zone past the hole; speed over line | _TODO: add vetted link_ |
+| Category | Drill | Where | What to do | Video |
+|----------|-------|-------|-----------|-------|
+| `wedge-distance-control` | Clock / ladder wedges | range | 3 carry numbers (e.g. 50/70/90y), 5 balls each, log carry on Trackman; aim ±5y | _TODO: add vetted link_ |
+| `dispersion-irons` | Gate / alignment-stick window | range | Set sticks as a start-line gate; 7-iron, must start every ball through the gate | _TODO: add vetted link_ |
+| `strike-low-point` | Towel / line drill | range | Strike a line (or just past a towel) so divot starts after the ball; check smash factor | _TODO: add vetted link_ |
+| `driver-launch` | Tee height + AoA ladder | range | Adjust tee height/ball position to raise launch & cut spin; target an efficient launch/spin window | _TODO: add vetted link_ |
+| `gapping` | Build-your-yardages session | range | Hit each club 5x, record avg carry, find overlaps/holes; pick one club to re-loft or swap | _TODO: add vetted link_ |
+| `putting-speed` | Ladder lag drill | range | Putt to 20/30/40ft, finish within a 3ft zone past the hole; speed over line | _TODO: add vetted link_ |
 
 These start as `TODO` links on purpose — **do not invent YouTube URLs.** Fill
 them via Live search once verified.
